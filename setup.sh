@@ -10,6 +10,10 @@ echo "Installing dependencies..."
 
 npm install
 
+echo "Ensuring Cesium compatibility..."
+
+npm install @zip.js/zip.js@2.6.63 --save-exact
+
 mkdir -p static/data static/textures
 
 echo "Downloading Earth texture..."

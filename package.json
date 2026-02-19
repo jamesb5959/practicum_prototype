@@ -20,5 +20,8 @@
     "typescript": "^5.5.4",
     "vite": "^5.4.0",
     "vite-plugin-cesium": "^1.2.22"
+  },
+  "overrides": {
+    "@zip.js/zip.js": "2.6.63"
   }
 }
