@@ -8,6 +8,8 @@
 
   let viewer;
   let error = '';
+  let lastUpdated = '';
+  let CesiumLib;
 
   // Unified satellite list
   let satellites = [
@@ -64,7 +66,7 @@
 
     // Slow rotation
     viewer.clock.onTick.addEventListener(() => {
-      viewer.scene.camera.rotate(Cesium.Cartesian3.UNIT_Z, 0.0005);
+      viewer.scene.camera.rotate(CesiumLib.Cartesian3.UNIT_Z, 0.0005);
     });
   });
 
@@ -135,6 +137,8 @@
 
   /* Mini Globe */
   .mini-globe-container {
+    all: unset;
+    display: block;
     height: 250px;
     cursor: pointer;
     position: relative;
@@ -188,12 +192,6 @@
   .problem-card {
     background: #3d1620;
     border-left: 4px solid #ff3b3b;
-  }
-
-  .sat-card {
-    padding: 12px;
-    margin-bottom: 10px;
-    border-radius: 6px;
   }
 
   .issue {
