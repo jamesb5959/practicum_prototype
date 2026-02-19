@@ -2,11 +2,12 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
-  import { isAuthenticated } from '$lib/auth';
-  import * as Cesium from 'cesium';
+  import { isAuthenticated, logout } from '$lib/auth';
+  import { fetchActiveTle, parseTle, propagateToGeodetic } from '$lib/tle';
   import 'cesium/Build/Cesium/Widgets/widgets.css';
 
   let viewer;
+  let error = '';
 
   // Unified satellite list
   let satellites = [
@@ -32,19 +33,32 @@
     }
 
     if (!browser) return;
+    
 
-    // Create mini Cesium globe
-    viewer = new Cesium.Viewer("miniGlobe", {
-      animation: false,
-      timeline: false,
-      baseLayerPicker: false,
-      geocoder: false,
-      homeButton: false,
-      sceneModePicker: false,
-      navigationHelpButton: false,
-      infoBox: false,
-      selectionIndicator: false
-    });
+     try {
+      CesiumLib = await import('cesium');
+      CesiumLib.Ion.defaultAccessToken = '';
+
+      // Create mini Cesium globe
+      viewer = new Cesium.Viewer("miniGlobe", {
+        animation: false,
+        timeline: false,
+        baseLayerPicker: false,
+        geocoder: false,
+        homeButton: false,
+        sceneModePicker: false,
+        navigationHelpButton: false,
+        infoBox: false,
+        selectionIndicator: false
+      });
+    } catch (err) {
+      error =
+        err instanceof Error
+          ? `Cesium init failed: ${err.message}`
+          : 'Cesium init failed.';
+      lastUpdated = new Date().toLocaleString();
+      return;
+    }
 
     viewer.scene.globe.enableLighting = true;
 
@@ -66,10 +80,10 @@
 <div class="dashboard">
 
   <!-- Mini Globe Section -->
-  <div class="mini-globe-container" on:click={goToSpaceView}>
+  <button class="mini-globe-container" on:click={goToSpaceView} aria-label="Go to Space View">
     <div id="miniGlobe"></div>
     <div class="globe-label">Click for Space View</div>
-  </div>
+  </button>
 
   <!-- Satellite Status Section -->
   <div class="satellite-columns">
