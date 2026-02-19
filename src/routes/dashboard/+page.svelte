@@ -2,25 +2,28 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
-  import { isAuthenticated, logout } from '$lib/auth';
-  import { fetchActiveTle, parseTle, propagateToGeodetic } from '$lib/tle';
+  import { isAuthenticated } from '$lib/auth';
+  import * as Cesium from 'cesium';
   import 'cesium/Build/Cesium/Widgets/widgets.css';
 
   let viewer;
-  let CesiumLib;
-  let loading = false;
-  let error = '';
-  let lastUpdated = '';
-  let satelliteCount = 0;
-  let dataSource = 'NASA';
-  let refreshTimer;
-  let positionTimer;
 
-  let allSatellites = [];
-  let tracked = [];
-  let displayCount = 10;
-  let trajectoryHours = 24;
-  const LEO_MAX_KM = 2000;
+  // Unified satellite list
+  let satellites = [
+    { name: "Hubble Space Telescope", status: "operational" },
+    { name: "GPS IIF-3", status: "operational" },
+    { name: "NOAA-20", status: "warning", issue: "Telemetry delay" },
+    { name: "SatCom-12", status: "critical", issue: "Low battery" },
+    { name: "WeatherSat-X", status: "critical", issue: "Signal loss" }
+  ];
+
+  // Split into two columns:
+  $: healthySatellites = satellites.filter(s => s.status === "operational");
+  $: problemSatellites = satellites.filter(s => s.status !== "operational");
+
+  function goToSpaceView() {
+    goto('/space_view');
+  }
 
   onMount(async () => {
     if (!isAuthenticated()) {
@@ -30,330 +33,226 @@
 
     if (!browser) return;
 
-    try {
-      CesiumLib = await import('cesium');
-      CesiumLib.Ion.defaultAccessToken = '';
-
-      const textureInfo = await loadTexture('/textures/earth.png');
-      viewer = new CesiumLib.Viewer('cesiumContainer', {
-        imageryProvider: new CesiumLib.SingleTileImageryProvider({
-          url: textureInfo.url,
-          tileWidth: textureInfo.width,
-          tileHeight: textureInfo.height,
-          credit: ''
-        }),
-        terrainProvider: new CesiumLib.EllipsoidTerrainProvider(),
-        timeline: false,
-        animation: false,
-        geocoder: false,
-        baseLayerPicker: false,
-        sceneModePicker: false,
-        navigationHelpButton: false,
-        homeButton: false,
-        fullscreenButton: false,
-        infoBox: false,
-        selectionIndicator: false,
-        shouldAnimate: true
-      });
-    } catch (err) {
-      error =
-        err instanceof Error
-          ? `Cesium init failed: ${err.message}`
-          : 'Cesium init failed.';
-      lastUpdated = new Date().toLocaleString();
-      return;
-    }
+    // Create mini Cesium globe
+    viewer = new Cesium.Viewer("miniGlobe", {
+      animation: false,
+      timeline: false,
+      baseLayerPicker: false,
+      geocoder: false,
+      homeButton: false,
+      sceneModePicker: false,
+      navigationHelpButton: false,
+      infoBox: false,
+      selectionIndicator: false
+    });
 
     viewer.scene.globe.enableLighting = true;
-    viewer.scene.fog.enabled = true;
-    viewer.scene.globe.baseColor = CesiumLib.Color.fromCssColorString('#0b1020');
-    viewer.scene.backgroundColor = CesiumLib.Color.BLACK;
-    viewer.cesiumWidget.creditContainer.style.display = 'none';
 
-    await loadData();
-
-    refreshTimer = setInterval(loadData, 10 * 60 * 1000);
-    positionTimer = setInterval(updatePositions, 5000);
-  });
-
-  function loadTexture(url) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve({ url, width: img.naturalWidth, height: img.naturalHeight });
-      img.onerror = () => reject(new Error(`Failed to load texture: ${url}`));
-      img.src = url;
+    // Slow rotation
+    viewer.clock.onTick.addEventListener(() => {
+      viewer.scene.camera.rotate(Cesium.Cartesian3.UNIT_Z, 0.0005);
     });
-  }
+  });
 
   onDestroy(() => {
-    clearInterval(refreshTimer);
-    clearInterval(positionTimer);
-    if (viewer) {
-      viewer.destroy();
-    }
+    if (viewer) viewer.destroy();
   });
-
-  async function loadData() {
-    if (!viewer) return;
-    loading = true;
-    error = '';
-    try {
-      const { text, source } = await fetchActiveTle();
-      const sats = parseTle(text);
-      dataSource = source;
-      lastUpdated = new Date().toLocaleString();
-      allSatellites = sats.filter((sat) => {
-        const geo = propagateToGeodetic(sat.satrec, new Date());
-        return geo && geo.altKm <= LEO_MAX_KM;
-      });
-      satelliteCount = allSatellites.length;
-      rebuildEntities();
-    } catch (err) {
-      error = err instanceof Error ? err.message : 'Failed to load data.';
-      if (!lastUpdated) {
-        lastUpdated = new Date().toLocaleString();
-      }
-    } finally {
-      loading = false;
-    }
-  }
-
-  function updatePositions() {
-    if (!viewer || !CesiumLib) return;
-    const now = new Date();
-    for (const item of tracked) {
-      const geo = propagateToGeodetic(item.satrec, now);
-      if (!geo) continue;
-      item.entity.position = CesiumLib.Cartesian3.fromDegrees(
-        geo.lon,
-        geo.lat,
-        geo.altKm * 1000
-      );
-    }
-  }
-
-  function buildTrajectory(satrec, hours) {
-    const positions = [];
-    const now = Date.now();
-    const totalMs = hours * 60 * 60 * 1000;
-    const steps = Math.min(160, Math.max(16, Math.floor(hours / 3)));
-    for (let i = 0; i <= steps; i += 1) {
-      const time = new Date(now + (totalMs * i) / steps);
-      const geo = propagateToGeodetic(satrec, time);
-      if (!geo) continue;
-      positions.push(
-        CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000)
-      );
-    }
-    return positions;
-  }
-
-  function rebuildEntities() {
-    if (!viewer || !CesiumLib) return;
-    viewer.entities.removeAll();
-    tracked = [];
-    const count = Math.min(displayCount, allSatellites.length);
-    for (let i = 0; i < count; i += 1) {
-      const sat = allSatellites[i];
-      const geo = propagateToGeodetic(sat.satrec, new Date());
-      if (!geo) continue;
-      const position = CesiumLib.Cartesian3.fromDegrees(
-        geo.lon,
-        geo.lat,
-        geo.altKm * 1000
-      );
-      const entity = viewer.entities.add({
-        name: sat.name,
-        position,
-        point: {
-          pixelSize: 4,
-          color: CesiumLib.Color.CYAN,
-          outlineColor: CesiumLib.Color.BLACK,
-          outlineWidth: 1
-        }
-      });
-      const trajectory = viewer.entities.add({
-        polyline: {
-          positions: buildTrajectory(sat.satrec, trajectoryHours),
-          width: 1.5,
-          material: CesiumLib.Color.CYAN.withAlpha(0.45)
-        }
-      });
-      tracked.push({ satrec: sat.satrec, entity, trajectory });
-    }
-    updatePositions();
-  }
-
-  function handleLogout() {
-    logout();
-    goto('/login');
-  }
-
-  $: if (viewer && CesiumLib && allSatellites.length) {
-    displayCount;
-    trajectoryHours;
-    rebuildEntities();
-  }
 </script>
 
 <svelte:head>
-  <title>LEO Prototype | Dashboard</title>
+  <title>Prototype | Dashboard</title>
 </svelte:head>
 
 <div class="dashboard">
-  <div id="cesiumContainer"></div>
 
-  <div class="overlay glass fade-in">
-    <div class="overlay-header">
-      <h2>LEO Prototype</h2>
-      <div class="actions">
-        <button class="btn secondary" on:click={loadData} disabled={loading}>
-          {loading ? 'Refreshing...' : 'Refresh Data'}
-        </button>
-        <button class="btn secondary" on:click={handleLogout}>Logout</button>
-      </div>
-    </div>
-
-    <div class="stats">
-      <div>
-        <span class="label">Satellites loaded</span>
-        <strong>{satelliteCount}</strong>
-      </div>
-      <div>
-        <span class="label">Data source</span>
-        <strong>{dataSource}</strong>
-      </div>
-      <div>
-        <span class="label">Last updated</span>
-        <strong>{lastUpdated || 'Loading...'}</strong>
-      </div>
-    </div>
-
-    {#if error}
-      <div class="error">{error}</div>
-    {/if}
+  <!-- Mini Globe Section -->
+  <div class="mini-globe-container" on:click={goToSpaceView}>
+    <div id="miniGlobe"></div>
+    <div class="globe-label">Click for Space View</div>
   </div>
 
-  <div class="controls glass fade-in">
-    <div class="control">
-      <div class="control-header">
-        <span>Satellites to view</span>
-        <strong>{Math.min(displayCount, satelliteCount)}</strong>
-      </div>
-      <input
-        class="range"
-        type="range"
-        min="1"
-        max={Math.max(1, satelliteCount)}
-        step="1"
-        bind:value={displayCount}
-      />
-    </div>
+  <!-- Satellite Status Section -->
+  <div class="satellite-columns">
 
-    <div class="control">
-      <div class="control-header">
-        <span>Trajectory hours</span>
-        <strong>{trajectoryHours}h</strong>
+  <!-- Operational -->
+  <div class="column healthy">
+    <h2>🟢 Operational Satellites</h2>
+    {#each healthySatellites as sat}
+      <div class="sat-card operational">
+        <span class="status-dot operational-dot"></span>
+        {sat.name}
+        <span class="badge operational-badge">OPERATIONAL</span>
       </div>
-      <input
-        class="range"
-        type="range"
-        min="1"
-        max="480"
-        step="1"
-        bind:value={trajectoryHours}
-      />
-    </div>
+    {/each}
   </div>
+
+  <!-- Warning + Critical -->
+  <div class="column problem">
+    <h2>⚠ Satellites Requiring Attention</h2>
+    {#each problemSatellites as sat}
+      <div class="sat-card {sat.status}">
+        <span class="status-dot {sat.status}-dot"></span>
+
+        <div class="sat-info">
+          <strong>{sat.name}</strong>
+          {#if sat.issue}
+            <div class="issue">{sat.issue}</div>
+          {/if}
+        </div>
+
+        <span class="badge {sat.status}-badge">
+          {sat.status.toUpperCase()}
+        </span>
+      </div>
+    {/each}
+  </div>
+
+</div>
 </div>
 
 <style>
   .dashboard {
-    position: relative;
-    width: 100vw;
+    display: flex;
+    flex-direction: column;
     height: 100vh;
-    overflow: hidden;
+    background: #0b0f1a;
+    color: white;
   }
 
-  #cesiumContainer {
-    position: absolute;
-    inset: 0;
+  /* Mini Globe */
+  .mini-globe-container {
+    height: 250px;
+    cursor: pointer;
+    position: relative;
+    border-bottom: 2px solid #1c2438;
   }
 
-  .overlay {
+  #miniGlobe {
+    height: 100%;
+    width: 100%;
+  }
+
+  .globe-label {
     position: absolute;
-    top: 24px;
-    left: 24px;
+    bottom: 10px;
+    right: 20px;
+    font-size: 14px;
+    opacity: 0.7;
+  }
+
+  /* Columns */
+  .satellite-columns {
+    flex: 1;
+    display: flex;
+  }
+
+  .column {
+    flex: 1;
     padding: 20px;
-    border-radius: 16px;
-    width: min(420px, 90vw);
-    display: grid;
-    gap: 16px;
+    overflow-y: auto;
   }
 
-  .overlay-header {
+  .column h2 {
+    margin-bottom: 15px;
+  }
+
+  /* Healthy */
+  .healthy {
+    background: #0e1c14;
+  }
+
+  .healthy-card {
+    background: #163d26;
+    border-left: 4px solid #00ff88;
+  }
+
+  /* Problem */
+  .problem {
+    background: #1a0f14;
+  }
+
+  .problem-card {
+    background: #3d1620;
+    border-left: 4px solid #ff3b3b;
+  }
+
+  .sat-card {
+    padding: 12px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+  }
+
+  .issue {
+    font-size: 12px;
+    opacity: 0.8;
+  }
+
+  /* Status Dot */
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 10px;
+  }
+
+  /* Dot Colors */
+  .operational-dot { background: #00ff88; }
+  .warning-dot { background: #ffcc00; }
+  .critical-dot { background: #ff3b3b; }
+
+  /* Badge */
+  .badge {
+    margin-left: auto;
+    padding: 4px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+    font-weight: bold;
+  }
+
+  .operational-badge {
+    background: #163d26;
+    color: #00ff88;
+  }
+
+  .warning-badge {
+    background: #3d3300;
+    color: #ffcc00;
+  }
+
+  .critical-badge {
+    background: #3d1620;
+    color: #ff3b3b;
+  }
+
+  /* Card Layout */
+  .sat-card {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    padding: 12px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    background: #111827;
   }
 
-  .overlay-header h2 {
-    margin: 0;
-    font-size: 18px;
-  }
-
-  .actions {
+  .sat-info {
     display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+    flex-direction: column;
   }
 
-  .stats {
-    display: grid;
-    gap: 12px;
+  .issue {
+    font-size: 12px;
+    opacity: 0.8;
   }
 
-  .stats div {
-    display: flex;
-    justify-content: space-between;
-    font-size: 14px;
+  /* Optional glow for critical */
+  .critical {
+    animation: pulse 2s infinite;
   }
 
-  .label {
-    color: var(--muted);
-  }
-
-  .error {
-    color: #ff8797;
-    font-size: 13px;
-  }
-
-  .controls {
-    position: absolute;
-    bottom: 24px;
-    left: 24px;
-    padding: 16px;
-    border-radius: 16px;
-    width: min(320px, 88vw);
-    display: grid;
-    gap: 16px;
-  }
-
-  .control {
-    display: grid;
-    gap: 8px;
-    font-size: 14px;
-  }
-
-  .control-header {
-    display: flex;
-    justify-content: space-between;
-    color: var(--muted);
-  }
-
-  .range {
-    width: 100%;
-    accent-color: var(--accent);
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0px #ff3b3b; }
+    50% { box-shadow: 0 0 15px #ff3b3b; }
+    100% { box-shadow: 0 0 0px #ff3b3b; }
   }
 </style>
