@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { isAuthenticated, logout } from '$lib/auth';
-  import { fetchActiveTle, parseTle, propagateToGeodetic } from '$lib/tle';
+  import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
   import 'cesium/Build/Cesium/Widgets/widgets.css';
 
   let viewer;
@@ -69,6 +69,10 @@
       viewer.scene.camera.rotate(CesiumLib.Cartesian3.UNIT_Z, 0.0005);
     });
   });
+
+  function svgData(svg) {
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  }
 
   onDestroy(() => {
     if (viewer) viewer.destroy();
