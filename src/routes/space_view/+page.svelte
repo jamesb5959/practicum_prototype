@@ -478,6 +478,10 @@
     goto('/login');
   }
 
+  function handleDashboard() {
+    goto('/dashboard');
+  }
+
   function requestSensitiveFilter(filterName) {
     pendingSensitiveFilter = filterName;
     sensitivePasswordInput = '';
@@ -568,11 +572,12 @@
 
   <div class="overlay glass fade-in">
     <div class="overlay-header">
-      <h2>LEO Prototype</h2>
+      <h2>LEO Prototype - Space View</h2>
       <div class="actions">
         <button class="btn secondary" on:click={loadData} disabled={loading}>
           {loading ? 'Refreshing...' : 'Refresh Data'}
         </button>
+        <button class="btn secondary" on:click={handleDashboard}>Dashboard</button>
         <button class="btn secondary" on:click={handleLogout}>Logout</button>
       </div>
     </div>

@@ -3,7 +3,6 @@
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { isAuthenticated, logout } from '$lib/auth';
-  import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
   import 'cesium/Build/Cesium/Widgets/widgets.css';
 
   let viewer;
@@ -15,18 +14,14 @@
   let satellites = [
     { name: "Hubble Space Telescope", status: "operational" },
     { name: "GPS IIF-3", status: "operational" },
-    { name: "NOAA-20", status: "warning", issue: "Telemetry delay" },
-    { name: "SatCom-12", status: "critical", issue: "Low battery" },
-    { name: "WeatherSat-X", status: "critical", issue: "Signal loss" }
+    { name: "NOAA-20", status: "operational" },
+    { name: "SatCom-12", status: "warning", issue: "Off Course" },
+    { name: "WeatherSat-X", status: "critical", issue: "Collision Detected!" }
   ];
 
   // Split into two columns:
   $: healthySatellites = satellites.filter(s => s.status === "operational");
   $: problemSatellites = satellites.filter(s => s.status !== "operational");
-
-  function goToSpaceView() {
-    goto('/space_view');
-  }
 
   onMount(async () => {
     if (!isAuthenticated()) {
@@ -35,48 +30,77 @@
     }
 
     if (!browser) return;
-    
 
-     try {
+    try {
       CesiumLib = await import('cesium');
       CesiumLib.Ion.defaultAccessToken = '';
 
-      // Create mini Cesium globe
-      viewer = new Cesium.Viewer("miniGlobe", {
-        animation: false,
+      await loadTexture('/textures/earth.jpg');
+      viewer = new CesiumLib.Viewer('miniGlobe', {
+        baseLayer: CesiumLib.ImageryLayer.fromProviderAsync(
+          CesiumLib.SingleTileImageryProvider.fromUrl('/textures/earth.jpg', {
+            rectangle: CesiumLib.Rectangle.fromDegrees(-180, -90, 180, 90),
+            credit: ''
+          })
+        ),
+        terrainProvider: new CesiumLib.EllipsoidTerrainProvider(),
         timeline: false,
-        baseLayerPicker: false,
+        animation: false,
         geocoder: false,
-        homeButton: false,
+        baseLayerPicker: false,
         sceneModePicker: false,
         navigationHelpButton: false,
+        homeButton: false,
+        fullscreenButton: false,
         infoBox: false,
-        selectionIndicator: false
+        selectionIndicator: false,
+        shouldAnimate: true
+      });
+
+      // Disable user interactions
+      viewer.scene.screenSpaceCameraController.enableRotate = false;
+      viewer.scene.screenSpaceCameraController.enableTranslate = false;
+      viewer.scene.screenSpaceCameraController.enableZoom = false;
+      viewer.scene.screenSpaceCameraController.enableTilt = false;
+      viewer.scene.screenSpaceCameraController.enableLook = false;
+      viewer.scene.screenSpaceCameraController.enableCollisionDetection = false;
+      viewer.scene.screenSpaceCameraController.enableInputs = false; // disables mouse/keyboard
+
+      // Hide Cesium logo
+      viewer.cesiumWidget.creditContainer.style.display = 'none';
+
+      viewer.scene.globe.enableLighting = true;
+
+      viewer.clock.onTick.addEventListener(() => {
+        viewer.scene.camera.rotate(CesiumLib.Cartesian3.UNIT_Z, 0.0005);
       });
     } catch (err) {
-      error =
-        err instanceof Error
-          ? `Cesium init failed: ${err.message}`
-          : 'Cesium init failed.';
+      error = err instanceof Error ? `Cesium init failed: ${err.message}` : 'Cesium init failed.';
       lastUpdated = new Date().toLocaleString();
-      return;
     }
-
-    viewer.scene.globe.enableLighting = true;
-
-    // Slow rotation
-    viewer.clock.onTick.addEventListener(() => {
-      viewer.scene.camera.rotate(CesiumLib.Cartesian3.UNIT_Z, 0.0005);
-    });
   });
-
-  function svgData(svg) {
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }
 
   onDestroy(() => {
     if (viewer) viewer.destroy();
   });
+
+  function loadTexture(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(true);
+      img.onerror = () => reject(new Error(`Failed to load texture: ${url}`));
+      img.src = url;
+    });
+  }
+
+  function handleLogout() {
+    logout();
+    goto('/login');
+  }
+
+  function goToSpaceView() {
+    goto('/space_view');
+  }
 </script>
 
 <svelte:head>
@@ -84,6 +108,10 @@
 </svelte:head>
 
 <div class="dashboard">
+  <div class="dashboard-header">
+    <div class="title">LEO Dashboard</div>
+    <button class="logout-btn" on:click={handleLogout}>Logout</button>
+  </div>
 
   <!-- Mini Globe Section -->
   <button class="mini-globe-container" on:click={goToSpaceView} aria-label="Go to Space View">
@@ -96,7 +124,7 @@
 
   <!-- Operational -->
   <div class="column healthy">
-    <h2>🟢 Operational Satellites</h2>
+    <h2>🟢 Operational Systems</h2>
     {#each healthySatellites as sat}
       <div class="sat-card operational">
         <span class="status-dot operational-dot"></span>
@@ -108,7 +136,7 @@
 
   <!-- Warning + Critical -->
   <div class="column problem">
-    <h2>⚠ Satellites Requiring Attention</h2>
+    <h2>⚠ Systems Requiring Attention</h2>
     {#each problemSatellites as sat}
       <div class="sat-card {sat.status}">
         <span class="status-dot {sat.status}-dot"></span>
@@ -139,6 +167,17 @@
     color: white;
   }
 
+  .dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: #0a0d16;
+    border-bottom: 2px solid #1c2438;
+    color: white;
+    font-weight: bold;
+  }
+
   /* Mini Globe */
   .mini-globe-container {
     all: unset;
@@ -147,6 +186,22 @@
     cursor: pointer;
     position: relative;
     border-bottom: 2px solid #1c2438;
+  }
+
+  .logout-btn {
+    all: unset;
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 4px;
+    background: #ff3b3b;
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+    text-align: center;
+  }
+
+  .logout-btn:hover {
+    background: #ff5757;
   }
 
   #miniGlobe {
