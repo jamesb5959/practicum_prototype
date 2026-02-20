@@ -6,6 +6,8 @@
   let username = '';
   let password = '';
   let error = '';
+  let step = 'login';
+  let mfaCode = '';
 
   onMount(() => {
     if (isAuthenticated()) {
@@ -17,9 +19,18 @@
     error = '';
     const ok = login(username, password);
     if (ok) {
-      goto('/dashboard');
+      step = 'mfa';
     } else {
       error = 'Invalid credentials. Try admin / admin.';
+    }
+  }
+
+  function handleMfa() {
+    error = '';
+    if (mfaCode.trim() === '123456') {
+      goto('/dashboard');
+    } else {
+      error = 'Invalid MFA code. Try 123456.';
     }
   }
 </script>
@@ -35,27 +46,50 @@
       <p>Practicum LEO Trajectory Prototype.</p>
     </div>
 
-    <form on:submit|preventDefault={handleSubmit}>
-      <label>
-        <span>Username</span>
-        <input class="input" type="text" bind:value={username} autocomplete="username" />
-      </label>
+    {#if step === 'login'}
+      <form on:submit|preventDefault={handleSubmit}>
+        <label>
+          <span>Username</span>
+          <input class="input" type="text" bind:value={username} autocomplete="username" />
+        </label>
 
-      <label>
-        <span>Password</span>
-        <input class="input" type="password" bind:value={password} autocomplete="current-password" />
-      </label>
+        <label>
+          <span>Password</span>
+          <input class="input" type="password" bind:value={password} autocomplete="current-password" />
+        </label>
 
-      {#if error}
-        <div class="error">{error}</div>
-      {/if}
+        {#if error}
+          <div class="error">{error}</div>
+        {/if}
 
-      <button class="btn" type="submit">Login</button>
-    </form>
+        <button class="btn" type="submit">Login</button>
+      </form>
+    {:else}
+      <form on:submit|preventDefault={handleMfa}>
+        <label>
+          <span>Enter MFA code</span>
+          <input class="input" type="text" bind:value={mfaCode} inputmode="numeric" />
+        </label>
 
-    <div class="hint">
-      Default credentials: <strong>admin / admin</strong>
-    </div>
+        {#if error}
+          <div class="error">{error}</div>
+        {/if}
+
+        <button class="btn" type="submit">Verify</button>
+        <button class="btn secondary" type="button" on:click={() => (step = 'login')}>
+          Back
+        </button>
+      </form>
+      <div class="hint">
+        Prototype MFA code: <strong>123456</strong>
+      </div>
+    {/if}
+
+    {#if step === 'login'}
+      <div class="hint">
+        Default credentials: <strong>admin / admin</strong>
+      </div>
+    {/if}
   </div>
 </div>
 
