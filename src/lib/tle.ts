@@ -2,6 +2,8 @@ import * as satellite from 'satellite.js';
 
 export const LOCAL_TLE_URL = '/data/nasa-leo.tle';
 export const SAMPLE_TLE_URL = '/data/nasa-leo.sample.tle';
+export const LOCAL_DEBRIS_TLE_URL = '/data/nasa-debris.tle';
+export const SAMPLE_DEBRIS_TLE_URL = '/data/nasa-debris.sample.tle';
 
 export type TleSatellite = {
   name: string;
@@ -10,20 +12,44 @@ export type TleSatellite = {
   satrec: satellite.SatRec;
 };
 
-export async function fetchActiveTle(): Promise<{ text: string; source: string }> {
+async function fetchTleWithFallback(
+  localUrl: string,
+  sampleUrl: string
+): Promise<string> {
   try {
-    const response = await fetch(LOCAL_TLE_URL, { cache: 'no-store' });
+    const response = await fetch(localUrl, { cache: 'no-store' });
     if (!response.ok) {
       throw new Error(`Failed to fetch TLE data: ${response.status}`);
     }
-    const text = await response.text();
-    return { text, source: 'NASA' };
-  } catch (err) {
-    // Offline fallback so it still runs even if download failed. 
-    const response = await fetch(SAMPLE_TLE_URL, { cache: 'no-store' });
-    const text = await response.text();
-    return { text, source: 'NASA' };
+    return await response.text();
+  } catch {
+    // Offline fallback so it still runs even if download failed.
+    const response = await fetch(sampleUrl, { cache: 'no-store' });
+    if (!response.ok) return '';
+    return await response.text();
   }
+}
+
+export async function fetchActiveTle(): Promise<{ text: string; source: string }> {
+  const text = await fetchTleWithFallback(LOCAL_TLE_URL, SAMPLE_TLE_URL);
+  return { text, source: 'NASA' };
+}
+
+export async function fetchActiveAndDebrisTle(): Promise<{
+  activeText: string;
+  debrisText: string;
+  source: string;
+}> {
+  const [activeText, debrisText] = await Promise.all([
+    fetchTleWithFallback(LOCAL_TLE_URL, SAMPLE_TLE_URL),
+    fetchTleWithFallback(LOCAL_DEBRIS_TLE_URL, SAMPLE_DEBRIS_TLE_URL)
+  ]);
+
+  return {
+    activeText,
+    debrisText,
+    source: 'NASA'
+  };
 }
 
 export function parseTle(tleText: string): TleSatellite[] {
