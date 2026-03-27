@@ -1,0 +1,29 @@
+{
+  "name": "leo-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@zip.js/zip.js": "2.8.20",
+    "cesium": "1.138.0",
+    "satellite.js": "^6.0.2"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^3.2.0",
+    "@sveltejs/kit": "^2.6.0",
+    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "svelte": "^5.0.0",
+    "typescript": "^5.5.4",
+    "vite": "5.4.21",
+    "vite-plugin-cesium": "1.2.23"
+  },
+  "overrides": {
+    "@cesium/engine": "22.3.0",
+    "@zip.js/zip.js": "2.8.20"
+  }
+}
