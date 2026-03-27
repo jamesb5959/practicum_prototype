@@ -1,38 +1,8 @@
-<script>
-  import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { isAuthenticated, login } from '$lib/auth';
+<script lang="ts">
+  import { page } from '$app/state';
 
-  let username = '';
-  let password = '';
-  let error = '';
-  let step = 'login';
-  let mfaCode = '';
-
-  onMount(() => {
-    if (isAuthenticated()) {
-      goto('/dashboard');
-    }
-  });
-
-  function handleSubmit() {
-    error = '';
-    const ok = login(username, password);
-    if (ok) {
-      step = 'mfa';
-    } else {
-      error = 'Invalid credentials. Try admin / admin.';
-    }
-  }
-
-  function handleMfa() {
-    error = '';
-    if (mfaCode.trim() === '123456') {
-      goto('/dashboard');
-    } else {
-      error = 'Invalid MFA code. Try 123456.';
-    }
-  }
+  const error = page.url.searchParams.get('error') ?? '';
+  const next = page.url.searchParams.get('next') ?? '/dashboard';
 </script>
 
 <svelte:head>
@@ -43,53 +13,24 @@
   <div class="login-card glass fade-in">
     <div class="login-header">
       <h1>LEO Prototype</h1>
-      <p>Practicum LEO Trajectory Prototype.</p>
+      <p>Authenticate through the local Keycloak demo server.</p>
     </div>
 
-    {#if step === 'login'}
-      <form on:submit|preventDefault={handleSubmit}>
-        <label>
-          <span>Username</span>
-          <input class="input" type="text" bind:value={username} autocomplete="username" />
-        </label>
-
-        <label>
-          <span>Password</span>
-          <input class="input" type="password" bind:value={password} autocomplete="current-password" />
-        </label>
-
-        {#if error}
-          <div class="error">{error}</div>
-        {/if}
-
-        <button class="btn" type="submit">Login</button>
-      </form>
-    {:else}
-      <form on:submit|preventDefault={handleMfa}>
-        <label>
-          <span>Enter MFA code</span>
-          <input class="input" type="text" bind:value={mfaCode} inputmode="numeric" />
-        </label>
-
-        {#if error}
-          <div class="error">{error}</div>
-        {/if}
-
-        <button class="btn" type="submit">Verify</button>
-        <button class="btn secondary" type="button" on:click={() => (step = 'login')}>
-          Back
-        </button>
-      </form>
-      <div class="hint">
-        Prototype MFA code: <strong>123456</strong>
-      </div>
+    {#if error}
+      <div class="error">{decodeURIComponent(error)}</div>
     {/if}
 
-    {#if step === 'login'}
-      <div class="hint">
-        Default credentials: <strong>admin / admin</strong>
-      </div>
-    {/if}
+    <a
+      class="btn sign-in-link"
+      href={`/auth/login?next=${encodeURIComponent(next)}`}
+      data-sveltekit-reload
+    >
+      Sign in with Keycloak
+    </a>
+
+    <div class="hint">
+      Demo realm user: <strong>admin / Admin123!</strong>
+    </div>
   </div>
 </div>
 
@@ -118,26 +59,22 @@
     color: var(--muted);
   }
 
-  form {
-    display: grid;
-    gap: 14px;
-  }
-
-  label {
-    display: grid;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 14px;
-  }
-
   .error {
-    color: #ff8797;
+    color: #e69875;
     font-size: 14px;
+    margin-bottom: 14px;
   }
 
   .hint {
     margin-top: 16px;
     color: var(--muted);
     font-size: 13px;
+  }
+
+  .sign-in-link {
+    display: inline-flex;
+    width: 100%;
+    justify-content: center;
+    text-decoration: none;
   }
 </style>

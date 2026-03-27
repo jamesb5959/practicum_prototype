@@ -13,9 +13,25 @@
 ## Datasets Used
 - NASA LEO TLE (Two Line Element)
 
-## Authentication (Cyber Componet)
-- Default credentials: `admin / admin`
-- Security: client-side only, using a `localStorage` token.
+## Authentication
+- Login is handled by a local Keycloak server.
+- Default demo realm user: `admin / Admin123!`
+- SvelteKit uses a server-side OIDC flow and an `HttpOnly` session cookie.
+
+### App Auth Configuration
+
+Copy the app env file if you want to override the defaults:
+
+```bash
+cp .env.example .env
+```
+
+Default local values:
+
+- `APP_BASE_URL=http://localhost:5173`
+- `KEYCLOAK_BASE_URL=http://localhost:8080`
+- `KEYCLOAK_REALM=demo`
+- `KEYCLOAK_CLIENT_ID=svelte-web`
 
 ## How to Run
 Prerequisites:
