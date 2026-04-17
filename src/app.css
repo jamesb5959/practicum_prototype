@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap');
 
 :root {
+  --classification-bar-height: 22px;
   --bg: #1e2326;
   --bg-soft: #272e33;
   --fg: #d3c6aa;
@@ -45,7 +46,7 @@ input {
 }
 
 #svelte {
-  min-height: 100vh;
+  min-height: calc(100vh - var(--classification-bar-height));
 }
 
 .glass {

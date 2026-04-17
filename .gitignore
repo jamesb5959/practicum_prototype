@@ -3,6 +3,14 @@ node_modules/
 build/
 dist/
 .DS_Store
+.DS_Store?
+**/.DS_Store
 .env
 keycloak-server/.env
 *.log
+*.pyc
+__pycache__/
+TLE_Prediction/models/*.pth
+TLE_Prediction/cache/*.jsonl
+TLE_Prediction/cache/fontlist-v*.json
+practicum_bak/

@@ -1,7 +1,14 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
-  import { fetchActiveAndDebrisTle, parseTle } from '$lib/tle';
+  import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
+  import {
+    activeConjunctions,
+    collisionConfig,
+    initCollisionConfig,
+    refreshConjunctions,
+    updateCollisionConfig
+  } from '$lib/conjunction';
   import 'cesium/Build/Cesium/Widgets/widgets.css';
 
   let viewer;
@@ -9,15 +16,19 @@
   let error = '';
   let loading = true;
   let lastUpdated = '';
-  let dataSource = 'NASA';
+  let dataSource = 'Warpcore (Data)';
 
   let activeCount = 0;
   let debrisCount = 0;
   let operational = [];
   let attention = [];
+  let collisionMenuOpen = false;
+  let selectedHorizon = '24';
+  let selectedThreshold = '10';
 
   onMount(async () => {
     if (!browser) return;
+    initCollisionConfig();
 
     await Promise.all([initMiniGlobe(), loadSummary()]);
   });
@@ -77,6 +88,7 @@
       const { activeText, debrisText, source } = await fetchActiveAndDebrisTle();
       const activeSats = parseTle(activeText);
       const debrisSats = parseTle(debrisText);
+      const conjunctions = await refreshConjunctions(activeSats);
 
       activeCount = activeSats.length;
       debrisCount = debrisSats.length;
@@ -85,24 +97,46 @@
 
       operational = activeSats.slice(0, 6).map((sat) => ({
         name: sat.name,
-        status: 'operational'
+        status: 'tracked'
       }));
 
-      const anomalyCandidates = activeSats
-        .filter((sat) => sat.name.length % 7 === 0)
-        .slice(0, 4)
-        .map((sat, index) => ({
-          name: sat.name,
-          status: index === 0 ? 'critical' : 'warning',
-          issue: index === 0 ? 'Trajectory correction recommended' : 'Telemetry drift detected'
-        }));
+      const orbitCounts = activeSats.reduce(
+        (acc, sat) => {
+          const geo = propagateToGeodetic(sat.satrec, new Date());
+          if (!geo) return acc;
+          if (geo.altKm <= 2000) acc.leo += 1;
+          else if (geo.altKm <= 35786) acc.meo += 1;
+          else acc.geo += 1;
+          return acc;
+        },
+        { leo: 0, meo: 0, geo: 0 }
+      );
 
       attention = [
-        ...anomalyCandidates,
+        ...conjunctions.slice(0, 4).map((event) => ({
+          name: `${event.primarySatelliteNumber} / ${event.secondarySatelliteNumber}`,
+          status: 'critical',
+          issue: `${event.distanceKm.toFixed(2)} km at ${new Date(event.timeIso).toLocaleString()}`
+        })),
         {
-          name: 'Debris Monitoring',
-          status: debrisCount > 100 ? 'critical' : 'warning',
-          issue: `${debrisCount} debris objects currently tracked`
+          name: 'LEO Objects',
+          status: 'tracked',
+          issue: `${orbitCounts.leo} tracked in LEO`
+        },
+        {
+          name: 'MEO Objects',
+          status: 'tracked',
+          issue: `${orbitCounts.meo} tracked in MEO`
+        },
+        {
+          name: 'GEO Objects',
+          status: 'tracked',
+          issue: `${orbitCounts.geo} tracked in GEO`
+        },
+        {
+          name: 'Loaded Set',
+          status: 'tracked',
+          issue: `${activeCount} Warpcore objects available`
         }
       ];
     } catch (err) {
@@ -131,6 +165,27 @@
   function goToSpaceView() {
     window.location.href = '/space_view';
   }
+
+  async function handleHorizonChange(event) {
+    selectedHorizon = event.currentTarget.value;
+    updateCollisionConfig({ horizonHours: Number(selectedHorizon) });
+    await loadSummary();
+  }
+
+  async function handleThresholdChange(event) {
+    selectedThreshold = event.currentTarget.value;
+    updateCollisionConfig({ thresholdKm: Number(selectedThreshold) });
+    await loadSummary();
+  }
+
+  function handleCollisionBackdropKeydown(event) {
+    if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
+      collisionMenuOpen = false;
+    }
+  }
+
+  $: selectedHorizon = String($collisionConfig.horizonHours);
+  $: selectedThreshold = String($collisionConfig.thresholdKm);
 </script>
 
 <svelte:head>
@@ -139,13 +194,17 @@
 
 <div class="dashboard">
   <header class="dashboard-header glass fade-in">
-    <div>
+    <div class="header-copy">
+      <span class="eyebrow">Operations Summary</span>
       <h1>LEO Dashboard</h1>
       <p>Mission snapshot and health overview</p>
     </div>
     <div class="header-actions">
       <button class="btn secondary" on:click={loadSummary} disabled={loading}>
         {loading ? 'Refreshing...' : 'Refresh'}
+      </button>
+      <button class="btn secondary" on:click={() => (collisionMenuOpen = true)}>
+        Configure
       </button>
       <button class="btn secondary" on:click={handleLogout}>Logout</button>
     </div>
@@ -161,15 +220,18 @@
     </button>
 
     <div class="summary glass fade-in">
-      <h2>Live Summary</h2>
+      <div class="card-header">
+        <span class="eyebrow">Snapshot</span>
+        <h2>Live Summary</h2>
+      </div>
       <div class="summary-grid">
         <div>
           <span class="label">Active satellites</span>
           <strong>{activeCount}</strong>
         </div>
         <div>
-          <span class="label">Debris objects</span>
-          <strong>{debrisCount}</strong>
+          <span class="label">Tracked set size</span>
+          <strong>{activeCount + debrisCount}</strong>
         </div>
         <div>
           <span class="label">Data source</span>
@@ -184,17 +246,82 @@
         <p class="error">{error}</p>
       {/if}
     </div>
+
+    <div class="summary glass fade-in collision-summary">
+      <div class="collision-header">
+        <div>
+          <span class="eyebrow">Monitoring</span>
+          <h2>Collision Screen</h2>
+          <span class="label">Detected conjunctions: {$activeConjunctions.length}</span>
+        </div>
+      </div>
+    </div>
   </section>
+
+  {#if collisionMenuOpen}
+    <div
+      class="collision-backdrop"
+      role="button"
+      tabindex="0"
+      aria-label="Close collision settings"
+      on:click={() => (collisionMenuOpen = false)}
+      on:keydown={handleCollisionBackdropKeydown}
+    >
+      <div
+        class="collision-modal glass"
+        role="dialog"
+        tabindex="-1"
+        aria-modal="true"
+        aria-label="Collision Screen Settings"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+      >
+        <div class="collision-modal-header">
+          <h2>Collision Screen Settings</h2>
+          <button class="btn secondary" on:click={() => (collisionMenuOpen = false)}>Close</button>
+        </div>
+        <div class="collision-menu">
+          <label>
+            <span class="label">Screening horizon</span>
+            <select
+              bind:value={selectedHorizon}
+              on:change={handleHorizonChange}
+            >
+              <option value="6">6 hours</option>
+              <option value="12">12 hours</option>
+              <option value="24">24 hours</option>
+              <option value="48">48 hours</option>
+            </select>
+          </label>
+          <label>
+            <span class="label">Alert threshold</span>
+            <select
+              bind:value={selectedThreshold}
+              on:change={handleThresholdChange}
+            >
+              <option value="5">5 km</option>
+              <option value="10">10 km</option>
+              <option value="25">25 km</option>
+              <option value="50">50 km</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <section class="satellite-columns fade-in">
     <div class="column glass">
-      <h3>Operational Systems</h3>
+      <div class="section-header">
+        <span class="eyebrow">Tracked</span>
+        <h3>Operational Systems</h3>
+      </div>
       {#if operational.length}
         {#each operational as sat}
           <article class="sat-card">
             <span class="status-dot operational-dot"></span>
             <span class="sat-name">{sat.name}</span>
-            <span class="badge operational-badge">OPERATIONAL</span>
+            <span class="badge operational-badge">TRACKED</span>
           </article>
         {/each}
       {:else}
@@ -203,7 +330,10 @@
     </div>
 
     <div class="column glass">
-      <h3>Systems Requiring Attention</h3>
+      <div class="section-header">
+        <span class="eyebrow">Attention</span>
+        <h3>Catalog Highlights</h3>
+      </div>
       {#if attention.length}
         {#each attention as sat}
           <article class="sat-card">
@@ -225,18 +355,25 @@
 <style>
   .dashboard {
     min-height: 100vh;
-    padding: 18px;
+    padding: 22px;
     display: grid;
-    gap: 16px;
+    gap: 18px;
   }
 
   .dashboard-header {
     border-radius: 16px;
-    padding: 16px;
+    padding: 18px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 12px;
+    min-height: 104px;
+    animation: panel-rise 220ms ease;
+  }
+
+  .header-copy {
+    display: grid;
+    gap: 4px;
   }
 
   .dashboard-header h1 {
@@ -258,7 +395,7 @@
 
   .top-row {
     display: grid;
-    grid-template-columns: 1.4fr 1fr;
+    grid-template-columns: 1.35fr 0.95fr 0.95fr;
     gap: 16px;
   }
 
@@ -292,7 +429,7 @@
     gap: 2px;
     background: linear-gradient(180deg, rgba(23, 28, 31, 0), rgba(23, 28, 31, 0.92));
     transform: translateY(8px);
-    transition: transform 150ms ease;
+    transition: transform 180ms ease;
   }
 
   .globe-overlay span {
@@ -302,28 +439,113 @@
 
   .summary {
     border-radius: 16px;
-    padding: 16px;
+    padding: 18px;
+    min-height: clamp(220px, 34vh, 320px);
+    display: grid;
+    align-content: start;
+    gap: 14px;
+    animation: panel-rise 260ms ease;
   }
 
   .summary h2 {
-    margin: 0 0 12px;
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .card-header {
+    display: grid;
+    gap: 4px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.12);
+  }
+
+  .collision-summary {
+    position: relative;
+  }
+
+  .collision-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .collision-header h2 {
+    margin-bottom: 4px;
+  }
+
+  .collision-menu {
+    display: grid;
+    gap: 10px;
+  }
+
+  .collision-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 22, 20, 0.42);
+    display: grid;
+    place-items: center;
+    z-index: 300;
+  }
+
+  .collision-modal {
+    width: min(420px, 92vw);
+    padding: 16px;
+    border-radius: 14px;
+    display: grid;
+    gap: 14px;
+    border: 1px solid var(--border);
+  }
+
+  .collision-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .collision-modal-header h2 {
+    margin: 0;
     font-size: 18px;
   }
 
   .summary-grid {
     display: grid;
-    gap: 10px;
+    gap: 12px;
+  }
+
+  .collision-menu label {
+    display: grid;
+    gap: 6px;
   }
 
   .summary-grid div {
     display: flex;
     justify-content: space-between;
     gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.08);
+  }
+
+  .collision-menu select {
+    border: 1px solid var(--border);
+    background: rgba(24, 29, 31, 0.74);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
   }
 
   .label {
     color: var(--muted);
     font-size: 13px;
+  }
+
+  .eyebrow {
+    color: var(--accent);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 
   .error {
@@ -340,12 +562,21 @@
 
   .column {
     border-radius: 16px;
-    padding: 14px;
-    min-height: 240px;
+    padding: 18px;
+    min-height: 280px;
+    animation: panel-rise 320ms ease;
+  }
+
+  .section-header {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.12);
   }
 
   .column h3 {
-    margin: 0 0 12px;
+    margin: 0;
     font-size: 16px;
   }
 
@@ -358,6 +589,16 @@
     border-radius: 10px;
     border: 1px solid var(--border);
     background: rgba(24, 29, 31, 0.62);
+    transition:
+      transform 160ms ease,
+      border-color 160ms ease,
+      background-color 160ms ease;
+  }
+
+  .sat-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(127, 187, 179, 0.22);
+    background: rgba(28, 34, 36, 0.82);
   }
 
   .sat-info {
@@ -396,6 +637,14 @@
     background: #e67e80;
   }
 
+  .tracked-dot {
+    background: #a7c080;
+  }
+
+  .debris-dot {
+    background: #c5a46d;
+  }
+
   .badge {
     margin-left: auto;
     padding: 4px 8px;
@@ -420,9 +669,30 @@
     background: rgba(230, 126, 128, 0.14);
   }
 
+  .tracked-badge {
+    color: #a7c080;
+    background: rgba(167, 192, 128, 0.14);
+  }
+
+  .debris-badge {
+    color: #c5a46d;
+    background: rgba(197, 164, 109, 0.14);
+  }
+
   .empty {
     margin: 10px 0 0;
     color: var(--muted);
+  }
+
+  @keyframes panel-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   @media (max-width: 980px) {
