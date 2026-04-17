@@ -1,27 +1,8 @@
-<script>
-  import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { isAuthenticated, login } from '$lib/auth';
+<script lang="ts">
+  import { page } from '$app/state';
 
-  let username = '';
-  let password = '';
-  let error = '';
-
-  onMount(() => {
-    if (isAuthenticated()) {
-      goto('/dashboard');
-    }
-  });
-
-  function handleSubmit() {
-    error = '';
-    const ok = login(username, password);
-    if (ok) {
-      goto('/dashboard');
-    } else {
-      error = 'Invalid credentials. Try admin / admin.';
-    }
-  }
+  const error = page.url.searchParams.get('error') ?? '';
+  const next = page.url.searchParams.get('next') ?? '/dashboard';
 </script>
 
 <svelte:head>
@@ -32,29 +13,23 @@
   <div class="login-card glass fade-in">
     <div class="login-header">
       <h1>LEO Prototype</h1>
-      <p>Practicum LEO Trajectory Prototype.</p>
+      <p>Authenticate through the local Keycloak demo server.</p>
     </div>
 
-    <form on:submit|preventDefault={handleSubmit}>
-      <label>
-        <span>Username</span>
-        <input class="input" type="text" bind:value={username} autocomplete="username" />
-      </label>
+    {#if error}
+      <div class="error">{decodeURIComponent(error)}</div>
+    {/if}
 
-      <label>
-        <span>Password</span>
-        <input class="input" type="password" bind:value={password} autocomplete="current-password" />
-      </label>
-
-      {#if error}
-        <div class="error">{error}</div>
-      {/if}
-
-      <button class="btn" type="submit">Login</button>
-    </form>
+    <a
+      class="btn sign-in-link"
+      href={`/auth/login?next=${encodeURIComponent(next)}`}
+      data-sveltekit-reload
+    >
+      Sign in with Keycloak
+    </a>
 
     <div class="hint">
-      Default credentials: <strong>admin / admin</strong>
+      Demo realm user: <strong>admin / Admin123!</strong>
     </div>
   </div>
 </div>
@@ -84,26 +59,22 @@
     color: var(--muted);
   }
 
-  form {
-    display: grid;
-    gap: 14px;
-  }
-
-  label {
-    display: grid;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 14px;
-  }
-
   .error {
-    color: #ff8797;
+    color: #e69875;
     font-size: 14px;
+    margin-bottom: 14px;
   }
 
   .hint {
     margin-top: 16px;
     color: var(--muted);
     font-size: 13px;
+  }
+
+  .sign-in-link {
+    display: inline-flex;
+    width: 100%;
+    justify-content: center;
+    text-decoration: none;
   }
 </style>

@@ -1,0 +1,154 @@
+body {
+  --pf-v5-global--primary-color--100: #e6c384;
+  --pf-v5-global--primary-color--200: #d8a657;
+  --pf-v5-global--active-color--100: #e67e80;
+  --pf-v5-global--BackgroundColor--100: #1e2326;
+  --pf-v5-c-button--m-primary--BackgroundColor: #d8a657;
+  --pf-v5-c-button--m-primary--hover--BackgroundColor: #e67e80;
+  --pf-v5-c-button--m-secondary--Color: #e6c384;
+  background:
+    radial-gradient(1100px 720px at 18% 10%, rgba(167, 192, 128, 0.1), transparent 58%),
+    radial-gradient(900px 620px at 82% 14%, rgba(127, 187, 179, 0.08), transparent 52%),
+    linear-gradient(160deg, #1e2326 0%, #232a2e 45%, #171c1f 100%);
+  color: #d3c6aa;
+  font-family: "Space Grotesk", "Sora", system-ui, -apple-system, sans-serif;
+  background-attachment: fixed;
+}
+
+a,
+a:visited,
+a:hover,
+a:focus,
+a:active {
+  color: #7fbbb3 !important;
+  text-decoration: none !important;
+  background-image: none !important;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+}
+
+.pf-v5-c-page,
+.pf-v5-c-page__main,
+.pf-v5-c-page__main-section,
+.pf-v5-c-card,
+.pf-v5-c-masthead,
+.pf-v5-c-nav,
+.pf-v5-c-menu,
+.pf-v5-c-dropdown__menu {
+  background: rgba(39, 46, 51, 0.82) !important;
+  color: #d3c6aa !important;
+  border-color: rgba(122, 168, 159, 0.2) !important;
+}
+
+.pf-v5-c-card,
+.pf-v5-c-page__main-section,
+.pf-v5-c-menu,
+.pf-v5-c-dropdown__menu {
+  border: 1px solid rgba(122, 168, 159, 0.2) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 24px 50px rgba(16, 22, 20, 0.35) !important;
+  backdrop-filter: blur(14px);
+}
+
+.pf-v5-c-title,
+.pf-v5-c-content h1,
+.pf-v5-c-content h2,
+.pf-v5-c-content h3,
+.pf-v5-c-nav__link,
+.pf-v5-c-description-list__term,
+.pf-v5-c-description-list__description,
+.pf-v5-c-form__label,
+.pf-v5-c-form__label-text {
+  color: #d3c6aa !important;
+}
+
+.pf-v5-c-helper-text,
+.pf-v5-c-content p,
+.pf-v5-c-nav__link-description,
+.pf-v5-c-form__helper-text,
+.pf-v5-c-description-list__text,
+.pf-v5-c-label {
+  color: #9da9a0 !important;
+}
+
+.pf-v5-c-form-control,
+input,
+select,
+textarea {
+  background: rgba(24, 29, 31, 0.74) !important;
+  color: #d3c6aa !important;
+  border: 1px solid rgba(122, 168, 159, 0.2) !important;
+  border-radius: 14px !important;
+  box-shadow: none !important;
+  background-image: none !important;
+}
+
+.pf-v5-c-form-control:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #7fbbb3 !important;
+  box-shadow: 0 0 0 1px #7fbbb3 !important;
+}
+
+.pf-v5-c-button,
+button,
+input[type="submit"],
+input[type="button"] {
+  border-radius: 999px !important;
+  border: 1px solid rgba(122, 168, 159, 0.18) !important;
+  box-shadow: none !important;
+  text-decoration: none !important;
+  background-image: none !important;
+}
+
+.pf-v5-c-button.pf-m-primary,
+button.pf-m-primary,
+input[type="submit"],
+a.pf-v5-c-button.pf-m-primary {
+  background-color: #d8a657 !important;
+  background-image: linear-gradient(135deg, #d8a657, #e67e80) !important;
+  border-color: rgba(216, 166, 87, 0.24) !important;
+  color: #1f1712 !important;
+}
+
+.pf-v5-c-button.pf-m-secondary,
+.pf-v5-c-button.pf-m-link,
+button.pf-m-secondary,
+button.pf-m-link,
+input[type="button"],
+a.pf-v5-c-button.pf-m-secondary,
+a.pf-v5-c-button.pf-m-link {
+  background-color: rgba(216, 166, 87, 0.18) !important;
+  background-image: linear-gradient(135deg, rgba(216, 166, 87, 0.18), rgba(230, 126, 128, 0.18)) !important;
+  color: #e6c384 !important;
+}
+
+.pf-v5-c-button:hover,
+button:hover,
+input[type="submit"]:hover,
+input[type="button"]:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(216, 166, 87, 0.24) !important;
+  filter: saturate(1.05);
+}
+
+.pf-v5-c-nav__link::before,
+.pf-v5-c-nav__link::after,
+.pf-v5-c-button::before,
+.pf-v5-c-button::after,
+.pf-v5-c-form-control::before,
+.pf-v5-c-form-control::after,
+a::before,
+a::after {
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+  background-image: none !important;
+}
+
+button,
+input[type="submit"],
+input[type="button"] {
+  appearance: none;
+  -webkit-appearance: none;
+}

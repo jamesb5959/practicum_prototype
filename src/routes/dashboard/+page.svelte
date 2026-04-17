@@ -1,47 +1,57 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
-  import { isAuthenticated, logout } from '$lib/auth';
-  import { fetchActiveTle, parseTle, propagateToGeodetic } from '$lib/tle';
+  import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
+  import {
+    activeConjunctions,
+    collisionConfig,
+    initCollisionConfig,
+    refreshConjunctions,
+    updateCollisionConfig
+  } from '$lib/conjunction';
   import 'cesium/Build/Cesium/Widgets/widgets.css';
 
   let viewer;
   let CesiumLib;
-  let loading = false;
   let error = '';
+  let loading = true;
   let lastUpdated = '';
-  let satelliteCount = 0;
-  let dataSource = 'NASA';
-  let refreshTimer;
-  let positionTimer;
+  let dataSource = 'Warpcore (Data)';
 
-  let allSatellites = [];
-  let tracked = [];
-  let displayCount = 10;
-  let trajectoryHours = 24;
-  const LEO_MAX_KM = 2000;
+  let activeCount = 0;
+  let debrisCount = 0;
+  let operational = [];
+  let attention = [];
+  let collisionMenuOpen = false;
+  let selectedHorizon = '24';
+  let selectedThreshold = '10';
 
   onMount(async () => {
-    if (!isAuthenticated()) {
-      goto('/login');
-      return;
-    }
-
     if (!browser) return;
+    initCollisionConfig();
 
+    await Promise.all([initMiniGlobe(), loadSummary()]);
+  });
+
+  onDestroy(() => {
+    if (viewer) {
+      viewer.destroy();
+    }
+  });
+
+  async function initMiniGlobe() {
     try {
       CesiumLib = await import('cesium');
       CesiumLib.Ion.defaultAccessToken = '';
 
-      const textureInfo = await loadTexture('/textures/earth.png');
-      viewer = new CesiumLib.Viewer('cesiumContainer', {
-        imageryProvider: new CesiumLib.SingleTileImageryProvider({
-          url: textureInfo.url,
-          tileWidth: textureInfo.width,
-          tileHeight: textureInfo.height,
-          credit: ''
-        }),
+      await loadTexture('/textures/earth.jpg');
+      viewer = new CesiumLib.Viewer('miniGlobe', {
+        baseLayer: CesiumLib.ImageryLayer.fromProviderAsync(
+          CesiumLib.SingleTileImageryProvider.fromUrl('/textures/earth.jpg', {
+            rectangle: CesiumLib.Rectangle.fromDegrees(-180, -90, 180, 90),
+            credit: ''
+          })
+        ),
         terrainProvider: new CesiumLib.EllipsoidTerrainProvider(),
         timeline: false,
         animation: false,
@@ -55,59 +65,80 @@
         selectionIndicator: false,
         shouldAnimate: true
       });
+
+      viewer.scene.screenSpaceCameraController.enableInputs = false;
+      viewer.scene.globe.enableLighting = true;
+      viewer.scene.fog.enabled = false;
+      viewer.scene.backgroundColor = CesiumLib.Color.fromCssColorString('#1e2326');
+      viewer.cesiumWidget.creditContainer.style.display = 'none';
+
+      viewer.clock.onTick.addEventListener(() => {
+        viewer.scene.camera.rotate(CesiumLib.Cartesian3.UNIT_Z, 0.0005);
+      });
     } catch (err) {
-      error =
-        err instanceof Error
-          ? `Cesium init failed: ${err.message}`
-          : 'Cesium init failed.';
-      lastUpdated = new Date().toLocaleString();
-      return;
+      error = err instanceof Error ? `Cesium init failed: ${err.message}` : 'Cesium init failed.';
     }
-
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.fog.enabled = true;
-    viewer.scene.globe.baseColor = CesiumLib.Color.fromCssColorString('#0b1020');
-    viewer.scene.backgroundColor = CesiumLib.Color.BLACK;
-    viewer.cesiumWidget.creditContainer.style.display = 'none';
-
-    await loadData();
-
-    refreshTimer = setInterval(loadData, 10 * 60 * 1000);
-    positionTimer = setInterval(updatePositions, 5000);
-  });
-
-  function loadTexture(url) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve({ url, width: img.naturalWidth, height: img.naturalHeight });
-      img.onerror = () => reject(new Error(`Failed to load texture: ${url}`));
-      img.src = url;
-    });
   }
 
-  onDestroy(() => {
-    clearInterval(refreshTimer);
-    clearInterval(positionTimer);
-    if (viewer) {
-      viewer.destroy();
-    }
-  });
-
-  async function loadData() {
-    if (!viewer) return;
+  async function loadSummary() {
     loading = true;
     error = '';
+
     try {
-      const { text, source } = await fetchActiveTle();
-      const sats = parseTle(text);
+      const { activeText, debrisText, source } = await fetchActiveAndDebrisTle();
+      const activeSats = parseTle(activeText);
+      const debrisSats = parseTle(debrisText);
+      const conjunctions = await refreshConjunctions(activeSats);
+
+      activeCount = activeSats.length;
+      debrisCount = debrisSats.length;
       dataSource = source;
       lastUpdated = new Date().toLocaleString();
-      allSatellites = sats.filter((sat) => {
-        const geo = propagateToGeodetic(sat.satrec, new Date());
-        return geo && geo.altKm <= LEO_MAX_KM;
-      });
-      satelliteCount = allSatellites.length;
-      rebuildEntities();
+
+      operational = activeSats.slice(0, 6).map((sat) => ({
+        name: sat.name,
+        status: 'tracked'
+      }));
+
+      const orbitCounts = activeSats.reduce(
+        (acc, sat) => {
+          const geo = propagateToGeodetic(sat.satrec, new Date());
+          if (!geo) return acc;
+          if (geo.altKm <= 2000) acc.leo += 1;
+          else if (geo.altKm <= 35786) acc.meo += 1;
+          else acc.geo += 1;
+          return acc;
+        },
+        { leo: 0, meo: 0, geo: 0 }
+      );
+
+      attention = [
+        ...conjunctions.slice(0, 4).map((event) => ({
+          name: `${event.primarySatelliteNumber} / ${event.secondarySatelliteNumber}`,
+          status: 'critical',
+          issue: `${event.distanceKm.toFixed(2)} km at ${new Date(event.timeIso).toLocaleString()}`
+        })),
+        {
+          name: 'LEO Objects',
+          status: 'tracked',
+          issue: `${orbitCounts.leo} tracked in LEO`
+        },
+        {
+          name: 'MEO Objects',
+          status: 'tracked',
+          issue: `${orbitCounts.meo} tracked in MEO`
+        },
+        {
+          name: 'GEO Objects',
+          status: 'tracked',
+          issue: `${orbitCounts.geo} tracked in GEO`
+        },
+        {
+          name: 'Loaded Set',
+          status: 'tracked',
+          issue: `${activeCount} Warpcore objects available`
+        }
+      ];
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load data.';
       if (!lastUpdated) {
@@ -118,82 +149,43 @@
     }
   }
 
-  function updatePositions() {
-    if (!viewer || !CesiumLib) return;
-    const now = new Date();
-    for (const item of tracked) {
-      const geo = propagateToGeodetic(item.satrec, now);
-      if (!geo) continue;
-      item.entity.position = CesiumLib.Cartesian3.fromDegrees(
-        geo.lon,
-        geo.lat,
-        geo.altKm * 1000
-      );
-    }
-  }
-
-  function buildTrajectory(satrec, hours) {
-    const positions = [];
-    const now = Date.now();
-    const totalMs = hours * 60 * 60 * 1000;
-    const steps = Math.min(160, Math.max(16, Math.floor(hours / 3)));
-    for (let i = 0; i <= steps; i += 1) {
-      const time = new Date(now + (totalMs * i) / steps);
-      const geo = propagateToGeodetic(satrec, time);
-      if (!geo) continue;
-      positions.push(
-        CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000)
-      );
-    }
-    return positions;
-  }
-
-  function rebuildEntities() {
-    if (!viewer || !CesiumLib) return;
-    viewer.entities.removeAll();
-    tracked = [];
-    const count = Math.min(displayCount, allSatellites.length);
-    for (let i = 0; i < count; i += 1) {
-      const sat = allSatellites[i];
-      const geo = propagateToGeodetic(sat.satrec, new Date());
-      if (!geo) continue;
-      const position = CesiumLib.Cartesian3.fromDegrees(
-        geo.lon,
-        geo.lat,
-        geo.altKm * 1000
-      );
-      const entity = viewer.entities.add({
-        name: sat.name,
-        position,
-        point: {
-          pixelSize: 4,
-          color: CesiumLib.Color.CYAN,
-          outlineColor: CesiumLib.Color.BLACK,
-          outlineWidth: 1
-        }
-      });
-      const trajectory = viewer.entities.add({
-        polyline: {
-          positions: buildTrajectory(sat.satrec, trajectoryHours),
-          width: 1.5,
-          material: CesiumLib.Color.CYAN.withAlpha(0.45)
-        }
-      });
-      tracked.push({ satrec: sat.satrec, entity, trajectory });
-    }
-    updatePositions();
+  function loadTexture(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(true);
+      img.onerror = () => reject(new Error(`Failed to load texture: ${url}`));
+      img.src = url;
+    });
   }
 
   function handleLogout() {
-    logout();
-    goto('/login');
+    window.location.href = '/auth/logout';
   }
 
-  $: if (viewer && CesiumLib && allSatellites.length) {
-    displayCount;
-    trajectoryHours;
-    rebuildEntities();
+  function goToSpaceView() {
+    window.location.href = '/space_view';
   }
+
+  async function handleHorizonChange(event) {
+    selectedHorizon = event.currentTarget.value;
+    updateCollisionConfig({ horizonHours: Number(selectedHorizon) });
+    await loadSummary();
+  }
+
+  async function handleThresholdChange(event) {
+    selectedThreshold = event.currentTarget.value;
+    updateCollisionConfig({ thresholdKm: Number(selectedThreshold) });
+    await loadSummary();
+  }
+
+  function handleCollisionBackdropKeydown(event) {
+    if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
+      collisionMenuOpen = false;
+    }
+  }
+
+  $: selectedHorizon = String($collisionConfig.horizonHours);
+  $: selectedThreshold = String($collisionConfig.thresholdKm);
 </script>
 
 <svelte:head>
@@ -201,159 +193,537 @@
 </svelte:head>
 
 <div class="dashboard">
-  <div id="cesiumContainer"></div>
+  <header class="dashboard-header glass fade-in">
+    <div class="header-copy">
+      <span class="eyebrow">Operations Summary</span>
+      <h1>LEO Dashboard</h1>
+      <p>Mission snapshot and health overview</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn secondary" on:click={loadSummary} disabled={loading}>
+        {loading ? 'Refreshing...' : 'Refresh'}
+      </button>
+      <button class="btn secondary" on:click={() => (collisionMenuOpen = true)}>
+        Configure
+      </button>
+      <button class="btn secondary" on:click={handleLogout}>Logout</button>
+    </div>
+  </header>
 
-  <div class="overlay glass fade-in">
-    <div class="overlay-header">
-      <h2>LEO Prototype</h2>
-      <div class="actions">
-        <button class="btn secondary" on:click={loadData} disabled={loading}>
-          {loading ? 'Refreshing...' : 'Refresh Data'}
-        </button>
-        <button class="btn secondary" on:click={handleLogout}>Logout</button>
+  <section class="top-row">
+    <button class="mini-globe-card glass fade-in" on:click={goToSpaceView} aria-label="Open Space View">
+      <div id="miniGlobe"></div>
+      <div class="globe-overlay">
+        <strong>Space View</strong>
+        <span>Open full orbital map</span>
       </div>
+    </button>
+
+    <div class="summary glass fade-in">
+      <div class="card-header">
+        <span class="eyebrow">Snapshot</span>
+        <h2>Live Summary</h2>
+      </div>
+      <div class="summary-grid">
+        <div>
+          <span class="label">Active satellites</span>
+          <strong>{activeCount}</strong>
+        </div>
+        <div>
+          <span class="label">Tracked set size</span>
+          <strong>{activeCount + debrisCount}</strong>
+        </div>
+        <div>
+          <span class="label">Data source</span>
+          <strong>{dataSource}</strong>
+        </div>
+        <div>
+          <span class="label">Last updated</span>
+          <strong>{lastUpdated || 'Loading...'}</strong>
+        </div>
+      </div>
+      {#if error}
+        <p class="error">{error}</p>
+      {/if}
     </div>
 
-    <div class="stats">
-      <div>
-        <span class="label">Satellites loaded</span>
-        <strong>{satelliteCount}</strong>
-      </div>
-      <div>
-        <span class="label">Data source</span>
-        <strong>{dataSource}</strong>
-      </div>
-      <div>
-        <span class="label">Last updated</span>
-        <strong>{lastUpdated || 'Loading...'}</strong>
+    <div class="summary glass fade-in collision-summary">
+      <div class="collision-header">
+        <div>
+          <span class="eyebrow">Monitoring</span>
+          <h2>Collision Screen</h2>
+          <span class="label">Detected conjunctions: {$activeConjunctions.length}</span>
+        </div>
       </div>
     </div>
+  </section>
 
-    {#if error}
-      <div class="error">{error}</div>
-    {/if}
-  </div>
-
-  <div class="controls glass fade-in">
-    <div class="control">
-      <div class="control-header">
-        <span>Satellites to view</span>
-        <strong>{Math.min(displayCount, satelliteCount)}</strong>
+  {#if collisionMenuOpen}
+    <div
+      class="collision-backdrop"
+      role="button"
+      tabindex="0"
+      aria-label="Close collision settings"
+      on:click={() => (collisionMenuOpen = false)}
+      on:keydown={handleCollisionBackdropKeydown}
+    >
+      <div
+        class="collision-modal glass"
+        role="dialog"
+        tabindex="-1"
+        aria-modal="true"
+        aria-label="Collision Screen Settings"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+      >
+        <div class="collision-modal-header">
+          <h2>Collision Screen Settings</h2>
+          <button class="btn secondary" on:click={() => (collisionMenuOpen = false)}>Close</button>
+        </div>
+        <div class="collision-menu">
+          <label>
+            <span class="label">Screening horizon</span>
+            <select
+              bind:value={selectedHorizon}
+              on:change={handleHorizonChange}
+            >
+              <option value="6">6 hours</option>
+              <option value="12">12 hours</option>
+              <option value="24">24 hours</option>
+              <option value="48">48 hours</option>
+            </select>
+          </label>
+          <label>
+            <span class="label">Alert threshold</span>
+            <select
+              bind:value={selectedThreshold}
+              on:change={handleThresholdChange}
+            >
+              <option value="5">5 km</option>
+              <option value="10">10 km</option>
+              <option value="25">25 km</option>
+              <option value="50">50 km</option>
+            </select>
+          </label>
+        </div>
       </div>
-      <input
-        class="range"
-        type="range"
-        min="1"
-        max={Math.max(1, satelliteCount)}
-        step="1"
-        bind:value={displayCount}
-      />
+    </div>
+  {/if}
+
+  <section class="satellite-columns fade-in">
+    <div class="column glass">
+      <div class="section-header">
+        <span class="eyebrow">Tracked</span>
+        <h3>Operational Systems</h3>
+      </div>
+      {#if operational.length}
+        {#each operational as sat}
+          <article class="sat-card">
+            <span class="status-dot operational-dot"></span>
+            <span class="sat-name">{sat.name}</span>
+            <span class="badge operational-badge">TRACKED</span>
+          </article>
+        {/each}
+      {:else}
+        <p class="empty">No active systems available.</p>
+      {/if}
     </div>
 
-    <div class="control">
-      <div class="control-header">
-        <span>Trajectory hours</span>
-        <strong>{trajectoryHours}h</strong>
+    <div class="column glass">
+      <div class="section-header">
+        <span class="eyebrow">Attention</span>
+        <h3>Catalog Highlights</h3>
       </div>
-      <input
-        class="range"
-        type="range"
-        min="1"
-        max="480"
-        step="1"
-        bind:value={trajectoryHours}
-      />
+      {#if attention.length}
+        {#each attention as sat}
+          <article class="sat-card">
+            <span class="status-dot {sat.status}-dot"></span>
+            <div class="sat-info">
+              <strong class="sat-name">{sat.name}</strong>
+              <span class="issue">{sat.issue}</span>
+            </div>
+            <span class="badge {sat.status}-badge">{sat.status.toUpperCase()}</span>
+          </article>
+        {/each}
+      {:else}
+        <p class="empty">No alerts right now.</p>
+      {/if}
     </div>
-  </div>
+  </section>
 </div>
 
 <style>
   .dashboard {
-    position: relative;
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
+    min-height: 100vh;
+    padding: 22px;
+    display: grid;
+    gap: 18px;
   }
 
-  #cesiumContainer {
+  .dashboard-header {
+    border-radius: 16px;
+    padding: 18px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    min-height: 104px;
+    animation: panel-rise 220ms ease;
+  }
+
+  .header-copy {
+    display: grid;
+    gap: 4px;
+  }
+
+  .dashboard-header h1 {
+    margin: 0;
+    font-size: 26px;
+  }
+
+  .dashboard-header p {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .top-row {
+    display: grid;
+    grid-template-columns: 1.35fr 0.95fr 0.95fr;
+    gap: 16px;
+  }
+
+  .mini-globe-card {
+    all: unset;
+    display: block;
+    position: relative;
+    border-radius: 16px;
+    height: clamp(220px, 34vh, 320px);
+    overflow: hidden;
+    cursor: pointer;
+    border: 1px solid var(--border);
+  }
+
+  .mini-globe-card:hover .globe-overlay {
+    transform: translateY(0);
+  }
+
+  #miniGlobe {
     position: absolute;
     inset: 0;
   }
 
-  .overlay {
+  .globe-overlay {
     position: absolute;
-    top: 24px;
-    left: 24px;
-    padding: 20px;
-    border-radius: 16px;
-    width: min(420px, 90vw);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 14px;
     display: grid;
-    gap: 16px;
+    gap: 2px;
+    background: linear-gradient(180deg, rgba(23, 28, 31, 0), rgba(23, 28, 31, 0.92));
+    transform: translateY(8px);
+    transition: transform 180ms ease;
   }
 
-  .overlay-header {
+  .globe-overlay span {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .summary {
+    border-radius: 16px;
+    padding: 18px;
+    min-height: clamp(220px, 34vh, 320px);
+    display: grid;
+    align-content: start;
+    gap: 14px;
+    animation: panel-rise 260ms ease;
+  }
+
+  .summary h2 {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .card-header {
+    display: grid;
+    gap: 4px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.12);
+  }
+
+  .collision-summary {
+    position: relative;
+  }
+
+  .collision-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .collision-header h2 {
+    margin-bottom: 4px;
+  }
+
+  .collision-menu {
+    display: grid;
+    gap: 10px;
+  }
+
+  .collision-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 22, 20, 0.42);
+    display: grid;
+    place-items: center;
+    z-index: 300;
+  }
+
+  .collision-modal {
+    width: min(420px, 92vw);
+    padding: 16px;
+    border-radius: 14px;
+    display: grid;
+    gap: 14px;
+    border: 1px solid var(--border);
+  }
+
+  .collision-modal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
   }
 
-  .overlay-header h2 {
+  .collision-modal-header h2 {
     margin: 0;
     font-size: 18px;
   }
 
-  .actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .stats {
+  .summary-grid {
     display: grid;
     gap: 12px;
   }
 
-  .stats div {
+  .collision-menu label {
+    display: grid;
+    gap: 6px;
+  }
+
+  .summary-grid div {
     display: flex;
     justify-content: space-between;
-    font-size: 14px;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.08);
+  }
+
+  .collision-menu select {
+    border: 1px solid var(--border);
+    background: rgba(24, 29, 31, 0.74);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
   }
 
   .label {
     color: var(--muted);
-  }
-
-  .error {
-    color: #ff8797;
     font-size: 13px;
   }
 
-  .controls {
-    position: absolute;
-    bottom: 24px;
-    left: 24px;
-    padding: 16px;
-    border-radius: 16px;
-    width: min(320px, 88vw);
+  .eyebrow {
+    color: var(--accent);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .error {
+    color: #e69875;
+    font-size: 13px;
+    margin: 12px 0 0;
+  }
+
+  .satellite-columns {
     display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 16px;
   }
 
-  .control {
-    display: grid;
-    gap: 8px;
-    font-size: 14px;
+  .column {
+    border-radius: 16px;
+    padding: 18px;
+    min-height: 280px;
+    animation: panel-rise 320ms ease;
   }
 
-  .control-header {
+  .section-header {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.12);
+  }
+
+  .column h3 {
+    margin: 0;
+    font-size: 16px;
+  }
+
+  .sat-card {
     display: flex;
-    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(24, 29, 31, 0.62);
+    transition:
+      transform 160ms ease,
+      border-color 160ms ease,
+      background-color 160ms ease;
+  }
+
+  .sat-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(127, 187, 179, 0.22);
+    background: rgba(28, 34, 36, 0.82);
+  }
+
+  .sat-info {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .sat-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .issue {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+  }
+
+  .operational-dot {
+    background: #a7c080;
+  }
+
+  .warning-dot {
+    background: #d9b86c;
+  }
+
+  .critical-dot {
+    background: #e67e80;
+  }
+
+  .tracked-dot {
+    background: #a7c080;
+  }
+
+  .debris-dot {
+    background: #c5a46d;
+  }
+
+  .badge {
+    margin-left: auto;
+    padding: 4px 8px;
+    font-size: 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .operational-badge {
+    color: #a7c080;
+    background: rgba(167, 192, 128, 0.14);
+  }
+
+  .warning-badge {
+    color: #d9b86c;
+    background: rgba(217, 184, 108, 0.14);
+  }
+
+  .critical-badge {
+    color: #e67e80;
+    background: rgba(230, 126, 128, 0.14);
+  }
+
+  .tracked-badge {
+    color: #a7c080;
+    background: rgba(167, 192, 128, 0.14);
+  }
+
+  .debris-badge {
+    color: #c5a46d;
+    background: rgba(197, 164, 109, 0.14);
+  }
+
+  .empty {
+    margin: 10px 0 0;
     color: var(--muted);
   }
 
-  .range {
-    width: 100%;
-    accent-color: var(--accent);
+  @keyframes panel-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (max-width: 980px) {
+    .top-row,
+    .satellite-columns {
+      grid-template-columns: 1fr;
+    }
+
+    .mini-globe-card,
+    #miniGlobe {
+      height: 220px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .dashboard {
+      padding: 12px;
+      gap: 12px;
+    }
+
+    .dashboard-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .header-actions {
+      width: 100%;
+    }
+
+    .header-actions .btn {
+      flex: 1;
+    }
   }
 </style>
