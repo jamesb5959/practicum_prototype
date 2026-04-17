@@ -1,99 +1,54 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-  import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
-  import { isAuthenticated, logout } from '$lib/auth';
   import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
+  import {
+    activeConjunctions,
+    collisionConfig,
+    initCollisionConfig,
+    refreshConjunctions,
+    updateCollisionConfig
+  } from '$lib/conjunction';
   import 'cesium/Build/Cesium/Widgets/widgets.css';
 
   let viewer;
   let CesiumLib;
-  let loading = false;
   let error = '';
+  let loading = true;
   let lastUpdated = '';
-  let satelliteCount = 0;
-  let dataSource = 'NASA';
-  let refreshTimer;
-  let positionTimer;
+  let dataSource = 'Warpcore (Data)';
 
-  let allSatellites = [];
-  let tracked = [];
-  let displayCount = 10;
-  let renderedSatelliteCount = 0;
-  let trajectoryHours = 24;
-  let selectedSat = null;
-  let infoTab = 'telemetry';
-  let selectedAnomalyAnalysis = null;
-  let anomalyChatInput = '';
-  let anomalyChatMessages = [];
-  let anomalyChatSat = '';
-  let filtersOpen = false;
-  let filterLeo = true;
-  let filterMeo = false;
-  let filterGeo = false;
-  let filterDebris = true;
-  let showTrajectoryLines = false;
-  let filterUnclassified = true;
-  let filterCui = false;
-  let filterClassified = false;
-  let sensitivePromptOpen = false;
-  let sensitivePasswordInput = '';
-  let sensitivePasswordError = '';
-  let pendingSensitiveFilter = '';
-  const SENSITIVE_FILTER_PASSWORD = 'admin';
-  const LEO_MAX_KM = 2000;
-  const MEO_MAX_KM = 35786;
-  const MAX_PROTOTYPE_SATELLITES = 2000;
-  const SAT_ICON_BLUE = svgData(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-      '<rect x="13" y="10" width="6" height="12" rx="2" fill="#4dd7ff"/>' +
-      '<rect x="6" y="12" width="6" height="8" rx="1" fill="#7fe3ff"/>' +
-      '<rect x="20" y="12" width="6" height="8" rx="1" fill="#7fe3ff"/>' +
-      '<circle cx="16" cy="16" r="2" fill="#0b1020"/>' +
-    '</svg>'
-  );
-  const SAT_ICON_RED = svgData(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-      '<rect x="13" y="10" width="6" height="12" rx="2" fill="#ff5a6b"/>' +
-      '<rect x="6" y="12" width="6" height="8" rx="1" fill="#ff8797"/>' +
-      '<rect x="20" y="12" width="6" height="8" rx="1" fill="#ff8797"/>' +
-      '<circle cx="16" cy="16" r="2" fill="#0b1020"/>' +
-    '</svg>'
-  );
-  const SAT_ICON_DEBRIS = svgData(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-      '<path d="M16 4 L24 7 L28 14 L25 23 L17 28 L9 25 L4 17 L7 8 Z" fill="#facc15"/>' +
-      '<path d="M11 12 L21 20 M20 11 L12 21" stroke="#0b1020" stroke-width="1.8" stroke-linecap="round"/>' +
-      '<circle cx="6.5" cy="6.5" r="1.5" fill="#fde047"/>' +
-      '<circle cx="26" cy="9" r="1.2" fill="#fde047"/>' +
-      '<circle cx="24.5" cy="25" r="1.3" fill="#fde047"/>' +
-    '</svg>'
-  );
-  const WARN_ICON = svgData(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-      '<path d="M16 4 L29 28 H3 Z" fill="#ffb84d"/>' +
-      '<rect x="15" y="11" width="2" height="9" fill="#1f1400"/>' +
-      '<rect x="15" y="22.5" width="2" height="2" fill="#1f1400"/>' +
-    '</svg>'
-  );
+  let activeCount = 0;
+  let debrisCount = 0;
+  let operational = [];
+  let attention = [];
+  let collisionMenuOpen = false;
+  let selectedHorizon = '24';
+  let selectedThreshold = '10';
 
   onMount(async () => {
-    if (!isAuthenticated()) {
-      goto('/login');
-      return;
-    }
-
     if (!browser) return;
+    initCollisionConfig();
 
+    await Promise.all([initMiniGlobe(), loadSummary()]);
+  });
+
+  onDestroy(() => {
+    if (viewer) {
+      viewer.destroy();
+    }
+  });
+
+  async function initMiniGlobe() {
     try {
       CesiumLib = await import('cesium');
       CesiumLib.Ion.defaultAccessToken = '';
 
       await loadTexture('/textures/earth.jpg');
-      viewer = new CesiumLib.Viewer('cesiumContainer', {
+      viewer = new CesiumLib.Viewer('miniGlobe', {
         baseLayer: CesiumLib.ImageryLayer.fromProviderAsync(
           CesiumLib.SingleTileImageryProvider.fromUrl('/textures/earth.jpg', {
-            rectangle: CesiumLib.Rectangle.MAX_VALUE,
+            rectangle: CesiumLib.Rectangle.fromDegrees(-180, -90, 180, 90),
             credit: ''
           })
         ),
@@ -110,74 +65,80 @@
         selectionIndicator: false,
         shouldAnimate: true
       });
+
+      viewer.scene.screenSpaceCameraController.enableInputs = false;
+      viewer.scene.globe.enableLighting = true;
+      viewer.scene.fog.enabled = false;
+      viewer.scene.backgroundColor = CesiumLib.Color.fromCssColorString('#1e2326');
+      viewer.cesiumWidget.creditContainer.style.display = 'none';
+
+      viewer.clock.onTick.addEventListener(() => {
+        viewer.scene.camera.rotate(CesiumLib.Cartesian3.UNIT_Z, 0.0005);
+      });
     } catch (err) {
-      error =
-        err instanceof Error
-          ? `Cesium init failed: ${err.message}`
-          : 'Cesium init failed.';
-      lastUpdated = new Date().toLocaleString();
-      return;
+      error = err instanceof Error ? `Cesium init failed: ${err.message}` : 'Cesium init failed.';
     }
-
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.fog.enabled = true;
-    viewer.scene.globe.show = true;
-    viewer.scene.screenSpaceCameraController.minimumZoomDistance = 120000;
-    viewer.scene.screenSpaceCameraController.maximumZoomDistance = 25000000;
-    viewer.scene.backgroundColor = CesiumLib.Color.BLACK;
-    viewer.cesiumWidget.creditContainer.style.display = 'none';
-
-    viewer.selectedEntityChanged.addEventListener((entity) => {
-      if (!entity) {
-        selectedSat = null;
-        infoTab = 'telemetry';
-        return;
-      }
-      const match = tracked.find((item) => item.entity === entity);
-      selectedSat = match ? match.meta : null;
-      infoTab = 'telemetry';
-    });
-
-    await loadData();
-
-    refreshTimer = setInterval(loadData, 10 * 60 * 1000);
-    positionTimer = setInterval(updatePositions, 5000);
-  });
-
-  function loadTexture(url) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(true);
-      img.onerror = () => reject(new Error(`Failed to load texture: ${url}`));
-      img.src = url;
-    });
   }
 
-  function svgData(svg) {
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }
-
-  onDestroy(() => {
-    clearInterval(refreshTimer);
-    clearInterval(positionTimer);
-    if (viewer) {
-      viewer.destroy();
-    }
-  });
-
-  async function loadData() {
-    if (!viewer) return;
+  async function loadSummary() {
     loading = true;
     error = '';
+
     try {
       const { activeText, debrisText, source } = await fetchActiveAndDebrisTle();
-      const activeSats = parseTle(activeText).map((sat) => ({ ...sat, isDebris: false }));
-      const debrisSats = parseTle(debrisText).map((sat) => ({ ...sat, isDebris: true }));
+      const activeSats = parseTle(activeText);
+      const debrisSats = parseTle(debrisText);
+      const conjunctions = await refreshConjunctions(activeSats);
+
+      activeCount = activeSats.length;
+      debrisCount = debrisSats.length;
       dataSource = source;
       lastUpdated = new Date().toLocaleString();
-      allSatellites = [...activeSats, ...debrisSats];
-      satelliteCount = allSatellites.length;
-      rebuildEntities();
+
+      operational = activeSats.slice(0, 6).map((sat) => ({
+        name: sat.name,
+        status: 'tracked'
+      }));
+
+      const orbitCounts = activeSats.reduce(
+        (acc, sat) => {
+          const geo = propagateToGeodetic(sat.satrec, new Date());
+          if (!geo) return acc;
+          if (geo.altKm <= 2000) acc.leo += 1;
+          else if (geo.altKm <= 35786) acc.meo += 1;
+          else acc.geo += 1;
+          return acc;
+        },
+        { leo: 0, meo: 0, geo: 0 }
+      );
+
+      attention = [
+        ...conjunctions.slice(0, 4).map((event) => ({
+          name: `${event.primarySatelliteNumber} / ${event.secondarySatelliteNumber}`,
+          status: 'critical',
+          issue: `${event.distanceKm.toFixed(2)} km at ${new Date(event.timeIso).toLocaleString()}`
+        })),
+        {
+          name: 'LEO Objects',
+          status: 'tracked',
+          issue: `${orbitCounts.leo} tracked in LEO`
+        },
+        {
+          name: 'MEO Objects',
+          status: 'tracked',
+          issue: `${orbitCounts.meo} tracked in MEO`
+        },
+        {
+          name: 'GEO Objects',
+          status: 'tracked',
+          issue: `${orbitCounts.geo} tracked in GEO`
+        },
+        {
+          name: 'Loaded Set',
+          status: 'tracked',
+          issue: `${activeCount} Warpcore objects available`
+        }
+      ];
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load data.';
       if (!lastUpdated) {
@@ -188,936 +149,581 @@
     }
   }
 
-  function updatePositions() {
-    if (!viewer || !CesiumLib) return;
-    const now = new Date();
-    for (const item of tracked) {
-      const geo = propagateToGeodetic(item.satrec, now);
-      if (!geo) continue;
-      const shifted = applyGeoOffset(geo, item.latOffset || 0, item.lonOffset || 0);
-      item.entity.position = CesiumLib.Cartesian3.fromDegrees(
-        shifted.lon,
-        shifted.lat,
-        shifted.altKm * 1000
-      );
-      if (item.warnEntity) {
-        item.warnEntity.position = item.entity.position;
-      }
-      if (item.trajectory && showTrajectoryLines) {
-        item.trajectory.polyline.positions = buildTrajectoryWithOffset(
-          item.satrec,
-          trajectoryHours,
-          item.latOffset || 0,
-          item.lonOffset || 0
-        );
-      }
-      if (selectedSat && item.meta && selectedSat.name === item.meta.name) {
-        selectedSat = {
-          ...selectedSat,
-          lat: shifted.lat.toFixed(3),
-          lon: shifted.lon.toFixed(3),
-          altKm: shifted.altKm.toFixed(1)
-        };
-      }
-    }
-  }
-
-  function buildTrajectory(satrec, hours) {
-    const positions = [];
-    const now = Date.now();
-    const totalMs = hours * 60 * 60 * 1000;
-    const steps = Math.min(160, Math.max(16, Math.floor(hours / 3)));
-    for (let i = 0; i <= steps; i += 1) {
-      const time = new Date(now + (totalMs * i) / steps);
-      const geo = propagateToGeodetic(satrec, time);
-      if (!geo) continue;
-      positions.push(
-        CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000)
-      );
-    }
-    return positions;
-  }
-
-  function clampLat(lat) {
-    return Math.max(-85, Math.min(85, lat));
-  }
-
-  function normalizeLon(lon) {
-    let value = lon;
-    while (value > 180) value -= 360;
-    while (value < -180) value += 360;
-    return value;
-  }
-
-  function applyGeoOffset(geo, latOffset, lonOffset) {
-    return {
-      lat: clampLat(geo.lat + latOffset),
-      lon: normalizeLon(geo.lon + lonOffset),
-      altKm: geo.altKm
-    };
-  }
-
-  function buildTrajectoryWithOffset(satrec, hours, latOffset, lonOffset) {
-    const positions = [];
-    const now = Date.now();
-    const totalMs = hours * 60 * 60 * 1000;
-    const steps = Math.min(160, Math.max(16, Math.floor(hours / 3)));
-    for (let i = 0; i <= steps; i += 1) {
-      const time = new Date(now + (totalMs * i) / steps);
-      const geo = propagateToGeodetic(satrec, time);
-      if (!geo) continue;
-      const shifted = applyGeoOffset(geo, latOffset, lonOffset);
-      positions.push(
-        CesiumLib.Cartesian3.fromDegrees(shifted.lon, shifted.lat, shifted.altKm * 1000)
-      );
-    }
-    return positions;
-  }
-
-  function seededUnit(seed) {
-    const x = Math.sin(seed) * 10000;
-    return x - Math.floor(x);
-  }
-
-  function buildRandomCloneOffsets(name, cloneId) {
-    const seed = hashString(`${name}-${cloneId}`);
-    return {
-      latOffset: seededUnit(seed) * 140 - 70,
-      lonOffset: seededUnit(seed * 1.37 + 17) * 360 - 180
-    };
-  }
-
-  function hashString(value) {
-    let hash = 0;
-    for (let i = 0; i < value.length; i += 1) {
-      hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-    }
-    return hash;
-  }
-
-  function buildAnomalyAnalysis(meta) {
-    const seed = hashString(meta.name);
-    const causeOptions = [
-      'attitude control drift signature',
-      'reaction wheel torque imbalance',
-      'thermal expansion affecting panel alignment',
-      'minor orbit determination residual growth'
-    ];
-    const actionOptions = [
-      'adjust +2.0° north',
-      'adjust +1.8° north-east',
-      'adjust +2.2° north-west',
-      'apply +2.0° north with 0.4° east trim'
-    ];
-    const cause = causeOptions[seed % causeOptions.length];
-    const action = actionOptions[(seed >>> 2) % actionOptions.length];
-    const resolutionHours = 240 + (seed % 121); // 10-15 days in hours
-
-    return {
-      cause,
-      resolutionHours,
-      action,
-      confidence: 82 + (seed % 14)
-    };
-  }
-
-  function buildFakeAnomalyReply(userText) {
-    if (!selectedAnomalyAnalysis) return 'No anomaly model context is active.';
-    const seed = hashString(userText.toLowerCase());
-    const variants = [
-      `Telemetry trend suggests we keep monitoring for the next ${selectedAnomalyAnalysis.resolutionHours} hours.`,
-      `Best visual recommendation remains: ${selectedAnomalyAnalysis.action}.`,
-      `Primary signal still points to ${selectedAnomalyAnalysis.cause}.`,
-      `No escalation needed yet. Re-check guidance after one orbital cycle.`
-    ];
-    return variants[seed % variants.length];
-  }
-
-  function submitAnomalyChat() {
-    const text = anomalyChatInput.trim();
-    if (!text) return;
-    anomalyChatMessages = [
-      ...anomalyChatMessages,
-      { role: 'user', text },
-      { role: 'assistant', text: buildFakeAnomalyReply(text) }
-    ];
-    anomalyChatInput = '';
-  }
-
-  function getOrbitBand(altKm) {
-    if (altKm <= LEO_MAX_KM) return 'LEO';
-    if (altKm <= MEO_MAX_KM) return 'MEO';
-    return 'GEO';
-  }
-
-  function isOrbitEnabled(altKm) {
-    const band = getOrbitBand(altKm);
-    return (band === 'LEO' && filterLeo) || (band === 'MEO' && filterMeo) || (band === 'GEO' && filterGeo);
-  }
-
-  function rebuildEntities() {
-    if (!viewer || !CesiumLib) return;
-    viewer.entities.removeAll();
-    tracked = [];
-    const now = new Date();
-    const visible = allSatellites
-      .map((sat) => {
-        const geo = propagateToGeodetic(sat.satrec, now);
-        return geo ? { sat, geo } : null;
-      })
-      .filter((item) => item !== null)
-      .filter(({ sat, geo }) => {
-        if (sat.isDebris) return filterDebris;
-        if (!isOrbitEnabled(geo.altKm)) return false;
-        // Current feed has no security classification metadata.
-        if (!filterUnclassified) return false;
-        return true;
-      });
-    const satelliteVisible = visible.filter(({ sat }) => !sat.isDebris);
-    const debrisVisible = visible.filter(({ sat }) => sat.isDebris);
-    satelliteCount = satelliteVisible.length;
-    renderedSatelliteCount = satelliteVisible.length
-      ? Math.min(Math.max(1, displayCount), MAX_PROTOTYPE_SATELLITES)
-      : 0;
-    const selectedSatellites = [];
-    for (let i = 0; i < renderedSatelliteCount; i += 1) {
-      const base = satelliteVisible[i % satelliteVisible.length];
-      const cloneRound = Math.floor(i / satelliteVisible.length);
-      const cloneId = i + 1;
-      const randomOffsets =
-        cloneRound > 0 ? buildRandomCloneOffsets(base.sat.name, cloneId) : { latOffset: 0, lonOffset: 0 };
-      selectedSatellites.push({
-        ...base,
-        latOffset: randomOffsets.latOffset,
-        lonOffset: randomOffsets.lonOffset,
-        cloneId,
-        isClone: cloneRound > 0
-      });
-    }
-    const selected = [...selectedSatellites, ...debrisVisible];
-    for (let i = 0; i < selected.length; i += 1) {
-      const { sat, geo } = selected[i];
-      const latOffset = selected[i].latOffset || 0;
-      const lonOffset = selected[i].lonOffset || 0;
-      const shifted = applyGeoOffset(geo, latOffset, lonOffset);
-      const anomaly = !sat.isDebris && sat.name.length % 7 === 0;
-      const status = sat.isDebris ? 'DEBRIS' : anomaly ? 'ANOMALY' : 'NORMAL';
-      const pressure = (0.0001 + (sat.name.length % 9) * 0.00003).toFixed(6);
-      const uptime = `${(sat.name.length % 28) + 1} days`;
-      const position = CesiumLib.Cartesian3.fromDegrees(
-        shifted.lon,
-        shifted.lat,
-        shifted.altKm * 1000
-      );
-      const displayName = sat.isDebris || !selected[i].isClone ? sat.name : `${sat.name} #${selected[i].cloneId}`;
-      const entity = viewer.entities.add({
-        name: displayName,
-        position,
-        billboard: {
-          image: sat.isDebris ? SAT_ICON_DEBRIS : anomaly ? SAT_ICON_RED : SAT_ICON_BLUE,
-          width: 18,
-          height: 18
-        }
-      });
-      const warnEntity = anomaly
-        ? viewer.entities.add({
-            position,
-            billboard: {
-              image: WARN_ICON,
-              width: 14,
-              height: 14,
-              pixelOffset: new CesiumLib.Cartesian2(0, -18),
-              show: new CesiumLib.CallbackProperty(
-                () => Math.floor(Date.now() / 500) % 2 === 0,
-                false
-              )
-            }
-          })
-        : null;
-      const trajectory = showTrajectoryLines
-        ? viewer.entities.add({
-            polyline: {
-              positions: buildTrajectoryWithOffset(sat.satrec, trajectoryHours, latOffset, lonOffset),
-              width: 1.5,
-              material: (
-                sat.isDebris
-                  ? CesiumLib.Color.LIGHTGRAY
-                  : anomaly
-                    ? CesiumLib.Color.RED
-                    : CesiumLib.Color.CYAN
-              ).withAlpha(0.45)
-            }
-          })
-        : null;
-      tracked.push({
-        satrec: sat.satrec,
-        latOffset,
-        lonOffset,
-        entity,
-        trajectory,
-        warnEntity,
-        meta: {
-          name: displayName,
-          status,
-          pressure,
-          uptime,
-          anomaly,
-          objectType: sat.isDebris ? 'Debris' : 'Satellite',
-          orbitBand: getOrbitBand(geo.altKm),
-          lat: shifted.lat.toFixed(3),
-          lon: shifted.lon.toFixed(3),
-          altKm: shifted.altKm.toFixed(1)
-        }
-      });
-    }
-    updatePositions();
+  function loadTexture(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(true);
+      img.onerror = () => reject(new Error(`Failed to load texture: ${url}`));
+      img.src = url;
+    });
   }
 
   function handleLogout() {
-    logout();
-    goto('/login');
+    window.location.href = '/auth/logout';
   }
 
-  function requestSensitiveFilter(filterName) {
-    pendingSensitiveFilter = filterName;
-    sensitivePasswordInput = '';
-    sensitivePasswordError = '';
-    sensitivePromptOpen = true;
+  function goToSpaceView() {
+    window.location.href = '/space_view';
   }
 
-  function handleCuiChange(event) {
-    const checked = event.currentTarget.checked;
-    if (!checked) {
-      filterCui = false;
-      return;
-    }
-    requestSensitiveFilter('cui');
+  async function handleHorizonChange(event) {
+    selectedHorizon = event.currentTarget.value;
+    updateCollisionConfig({ horizonHours: Number(selectedHorizon) });
+    await loadSummary();
   }
 
-  function handleClassifiedChange(event) {
-    const checked = event.currentTarget.checked;
-    if (!checked) {
-      filterClassified = false;
-      return;
-    }
-    requestSensitiveFilter('classified');
+  async function handleThresholdChange(event) {
+    selectedThreshold = event.currentTarget.value;
+    updateCollisionConfig({ thresholdKm: Number(selectedThreshold) });
+    await loadSummary();
   }
 
-  function closeSensitivePrompt() {
-    sensitivePromptOpen = false;
-    pendingSensitiveFilter = '';
-    sensitivePasswordInput = '';
-    sensitivePasswordError = '';
-  }
-
-  function submitSensitivePassword() {
-    if (sensitivePasswordInput !== SENSITIVE_FILTER_PASSWORD) {
-      sensitivePasswordError = 'Incorrect password.';
-      return;
-    }
-
-    if (pendingSensitiveFilter === 'cui') {
-      filterCui = true;
-    }
-    if (pendingSensitiveFilter === 'classified') {
-      filterClassified = true;
-    }
-    closeSensitivePrompt();
-  }
-
-  $: selectedAnomalyAnalysis =
-    selectedSat && selectedSat.anomaly ? buildAnomalyAnalysis(selectedSat) : null;
-
-  $: {
-    const satName = selectedSat && selectedSat.anomaly ? selectedSat.name : '';
-    if (satName !== anomalyChatSat) {
-      anomalyChatSat = satName;
-      anomalyChatInput = '';
-      anomalyChatMessages = satName
-        ? [
-            {
-              role: 'assistant',
-              text: 'Anomaly assistant ready. Ask for probable cause, timing, or maneuver guidance.'
-            }
-          ]
-        : [];
+  function handleCollisionBackdropKeydown(event) {
+    if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
+      collisionMenuOpen = false;
     }
   }
 
-  $: if (viewer && CesiumLib) {
-    displayCount;
-    trajectoryHours;
-    filterLeo;
-    filterMeo;
-    filterGeo;
-    filterDebris;
-    filterUnclassified;
-    filterCui;
-    filterClassified;
-    showTrajectoryLines;
-    rebuildEntities();
-  }
+  $: selectedHorizon = String($collisionConfig.horizonHours);
+  $: selectedThreshold = String($collisionConfig.thresholdKm);
 </script>
 
 <svelte:head>
   <title>LEO Prototype | Dashboard</title>
 </svelte:head>
 
-<div class="dashboard" class:sensitive-blur={sensitivePromptOpen}>
-  <div id="cesiumContainer"></div>
-
-  <div class="overlay glass fade-in">
-    <div class="overlay-header">
-      <h2>LEO Prototype</h2>
-      <div class="actions">
-        <button class="btn secondary" on:click={loadData} disabled={loading}>
-          {loading ? 'Refreshing...' : 'Refresh Data'}
-        </button>
-        <button class="btn secondary" on:click={handleLogout}>Logout</button>
-      </div>
+<div class="dashboard">
+  <header class="dashboard-header glass fade-in">
+    <div class="header-copy">
+      <span class="eyebrow">Operations Summary</span>
+      <h1>LEO Dashboard</h1>
+      <p>Mission snapshot and health overview</p>
     </div>
-
-    <div class="legend">
-      <span class="legend-item"><span class="dot nominal"></span> Normal</span>
-      <span class="legend-item"><span class="dot anomaly"></span> Anomaly</span>
-      <span class="legend-item"><span class="dot debris"></span> Debris</span>
+    <div class="header-actions">
+      <button class="btn secondary" on:click={loadSummary} disabled={loading}>
+        {loading ? 'Refreshing...' : 'Refresh'}
+      </button>
+      <button class="btn secondary" on:click={() => (collisionMenuOpen = true)}>
+        Configure
+      </button>
+      <button class="btn secondary" on:click={handleLogout}>Logout</button>
     </div>
+  </header>
 
-    <div class="stats">
-      <div>
-        <span class="label">Satellites loaded</span>
-        <strong>{satelliteCount}</strong>
+  <section class="top-row">
+    <button class="mini-globe-card glass fade-in" on:click={goToSpaceView} aria-label="Open Space View">
+      <div id="miniGlobe"></div>
+      <div class="globe-overlay">
+        <strong>Space View</strong>
+        <span>Open full orbital map</span>
       </div>
-      <div>
-        <span class="label">Data source</span>
-        <strong>{dataSource}</strong>
-      </div>
-      <div>
-        <span class="label">Last updated</span>
-        <strong>{lastUpdated || 'Loading...'}</strong>
-      </div>
-    </div>
-
-    {#if error}
-      <div class="error">{error}</div>
-    {/if}
-  </div>
-
-  <div class="controls glass fade-in">
-    <div class="control">
-      <div class="control-header">
-        <span>Satellites to view</span>
-        <strong>{renderedSatelliteCount}</strong>
-      </div>
-      <input
-        class="range"
-        type="range"
-        min="1"
-        max={MAX_PROTOTYPE_SATELLITES}
-        step="1"
-        bind:value={displayCount}
-      />
-    </div>
-
-    {#if showTrajectoryLines}
-      <div class="control">
-        <div class="control-header">
-          <span>Trajectory hours</span>
-          <strong>{trajectoryHours}h</strong>
-        </div>
-        <input
-          class="range"
-          type="range"
-          min="1"
-          max="480"
-          step="1"
-          bind:value={trajectoryHours}
-        />
-      </div>
-    {/if}
-  </div>
-
-  <div class:filters-open={filtersOpen} class="filters-shell">
-    <button class="filters-toggle glass" on:click={() => (filtersOpen = !filtersOpen)}>
-      {filtersOpen ? 'Close' : 'Filters'}
     </button>
-    <div class="filters glass">
-      <h3>Filter Sets</h3>
-      <div class="filter-group">
-        <label><input type="checkbox" bind:checked={filterLeo} /> LEO</label>
-        <label><input type="checkbox" bind:checked={filterMeo} /> MEO</label>
-        <label><input type="checkbox" bind:checked={filterGeo} /> GEO</label>
-        <label><input type="checkbox" bind:checked={filterDebris} /> Debris</label>
+
+    <div class="summary glass fade-in">
+      <div class="card-header">
+        <span class="eyebrow">Snapshot</span>
+        <h2>Live Summary</h2>
       </div>
-      <div class="filter-group">
-        <label><input type="checkbox" bind:checked={filterUnclassified} /> UNCLASSIFIED</label>
-        <label><input type="checkbox" checked={filterCui} on:change={handleCuiChange} /> CUI</label>
-        <label>
-          <input type="checkbox" checked={filterClassified} on:change={handleClassifiedChange} />
-          CLASSIFIED
-        </label>
-        <label><input type="checkbox" bind:checked={showTrajectoryLines} /> Trajectory lines</label>
+      <div class="summary-grid">
+        <div>
+          <span class="label">Active satellites</span>
+          <strong>{activeCount}</strong>
+        </div>
+        <div>
+          <span class="label">Tracked set size</span>
+          <strong>{activeCount + debrisCount}</strong>
+        </div>
+        <div>
+          <span class="label">Data source</span>
+          <strong>{dataSource}</strong>
+        </div>
+        <div>
+          <span class="label">Last updated</span>
+          <strong>{lastUpdated || 'Loading...'}</strong>
+        </div>
+      </div>
+      {#if error}
+        <p class="error">{error}</p>
+      {/if}
+    </div>
+
+    <div class="summary glass fade-in collision-summary">
+      <div class="collision-header">
+        <div>
+          <span class="eyebrow">Monitoring</span>
+          <h2>Collision Screen</h2>
+          <span class="label">Detected conjunctions: {$activeConjunctions.length}</span>
+        </div>
       </div>
     </div>
-  </div>
+  </section>
 
-  {#if selectedSat}
-    <div class="info glass fade-in">
-      <h3>{selectedSat.name}</h3>
-      <div class="tabs">
-        <button class:active={infoTab === 'telemetry'} on:click={() => (infoTab = 'telemetry')}>
-          Telemetry
-        </button>
-        <button class:active={infoTab === 'orbit'} on:click={() => (infoTab = 'orbit')}>Orbit</button>
-        <button class:active={infoTab === 'risk'} on:click={() => (infoTab = 'risk')}>Risk</button>
+  {#if collisionMenuOpen}
+    <div
+      class="collision-backdrop"
+      role="button"
+      tabindex="0"
+      aria-label="Close collision settings"
+      on:click={() => (collisionMenuOpen = false)}
+      on:keydown={handleCollisionBackdropKeydown}
+    >
+      <div
+        class="collision-modal glass"
+        role="dialog"
+        tabindex="-1"
+        aria-modal="true"
+        aria-label="Collision Screen Settings"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+      >
+        <div class="collision-modal-header">
+          <h2>Collision Screen Settings</h2>
+          <button class="btn secondary" on:click={() => (collisionMenuOpen = false)}>Close</button>
+        </div>
+        <div class="collision-menu">
+          <label>
+            <span class="label">Screening horizon</span>
+            <select
+              bind:value={selectedHorizon}
+              on:change={handleHorizonChange}
+            >
+              <option value="6">6 hours</option>
+              <option value="12">12 hours</option>
+              <option value="24">24 hours</option>
+              <option value="48">48 hours</option>
+            </select>
+          </label>
+          <label>
+            <span class="label">Alert threshold</span>
+            <select
+              bind:value={selectedThreshold}
+              on:change={handleThresholdChange}
+            >
+              <option value="5">5 km</option>
+              <option value="10">10 km</option>
+              <option value="25">25 km</option>
+              <option value="50">50 km</option>
+            </select>
+          </label>
+        </div>
       </div>
-
-      {#if infoTab === 'telemetry'}
-        <div class="info-grid">
-          <div>
-            <span class="label">Status</span>
-            <strong class:warn={selectedSat.anomaly}>{selectedSat.status}</strong>
-          </div>
-          <div><span class="label">Object</span><strong>{selectedSat.objectType}</strong></div>
-          <div><span class="label">Pressure</span><strong>{selectedSat.pressure}</strong></div>
-          <div><span class="label">Uptime</span><strong>{selectedSat.uptime}</strong></div>
-        </div>
-      {/if}
-
-      {#if infoTab === 'orbit'}
-        <div class="info-grid">
-          <div><span class="label">Orbit band</span><strong>{selectedSat.orbitBand}</strong></div>
-          <div><span class="label">Latitude</span><strong>{selectedSat.lat || '—'}</strong></div>
-          <div><span class="label">Longitude</span><strong>{selectedSat.lon || '—'}</strong></div>
-          <div><span class="label">Altitude</span><strong>{selectedSat.altKm || '—'} km</strong></div>
-        </div>
-      {/if}
-
-      {#if infoTab === 'risk'}
-        <div class="info-grid">
-          <div><span class="label">Risk level</span><strong>{selectedSat.anomaly ? 'Elevated' : 'Low'}</strong></div>
-          <div><span class="label">Proximity risk</span><strong>{selectedSat.anomaly ? 'Monitor' : 'Nominal'}</strong></div>
-          <div><span class="label">Recommended action</span><strong>{selectedSat.anomaly ? 'Plan correction burn' : 'None'}</strong></div>
-        </div>
-      {/if}
-
     </div>
   {/if}
 
-  {#if selectedAnomalyAnalysis}
-    <div class="anomaly-llm glass fade-in">
-      <h3>Anomaly Assistant</h3>
-      <p>
-        Preliminary model readout indicates <strong>{selectedAnomalyAnalysis.cause}</strong>.
-      </p>
-      <p>
-        Predicted correction window: <strong>{selectedAnomalyAnalysis.resolutionHours} hours</strong>.
-      </p>
-      <p>
-        Suggested maneuver: <strong>{selectedAnomalyAnalysis.action}</strong>.
-      </p>
-      <p class="confidence">Model confidence: {selectedAnomalyAnalysis.confidence}%</p>
-      <div class="chat-log">
-        {#each anomalyChatMessages as message}
-          <div class="chat-msg" class:user={message.role === 'user'}>
-            <span class="chat-role">{message.role === 'user' ? 'You' : 'Assistant'}</span>
-            <span>{message.text}</span>
-          </div>
+  <section class="satellite-columns fade-in">
+    <div class="column glass">
+      <div class="section-header">
+        <span class="eyebrow">Tracked</span>
+        <h3>Operational Systems</h3>
+      </div>
+      {#if operational.length}
+        {#each operational as sat}
+          <article class="sat-card">
+            <span class="status-dot operational-dot"></span>
+            <span class="sat-name">{sat.name}</span>
+            <span class="badge operational-badge">TRACKED</span>
+          </article>
         {/each}
-      </div>
-      <form class="chat-form" on:submit|preventDefault={submitAnomalyChat}>
-        <input
-          class="chat-input"
-          type="text"
-          placeholder="Ask anomaly assistant..."
-          bind:value={anomalyChatInput}
-        />
-      </form>
+      {:else}
+        <p class="empty">No active systems available.</p>
+      {/if}
     </div>
-  {/if}
 
-  {#if sensitivePromptOpen}
-    <div class="sensitive-backdrop">
-      <form class="sensitive-modal glass" on:submit|preventDefault={submitSensitivePassword}>
-        <h3>Restricted Filter Access</h3>
-        <p>Enter password to enable {pendingSensitiveFilter === 'cui' ? 'CUI' : 'CLASSIFIED'}.</p>
-        <input
-          type="password"
-          class="sensitive-input"
-          placeholder="Password"
-          bind:value={sensitivePasswordInput}
-        />
-        {#if sensitivePasswordError}
-          <div class="sensitive-error">{sensitivePasswordError}</div>
-        {/if}
-        <div class="sensitive-actions">
-          <button type="button" class="btn secondary" on:click={closeSensitivePrompt}>Cancel</button>
-          <button type="submit" class="btn secondary">Continue</button>
-        </div>
-      </form>
+    <div class="column glass">
+      <div class="section-header">
+        <span class="eyebrow">Attention</span>
+        <h3>Catalog Highlights</h3>
+      </div>
+      {#if attention.length}
+        {#each attention as sat}
+          <article class="sat-card">
+            <span class="status-dot {sat.status}-dot"></span>
+            <div class="sat-info">
+              <strong class="sat-name">{sat.name}</strong>
+              <span class="issue">{sat.issue}</span>
+            </div>
+            <span class="badge {sat.status}-badge">{sat.status.toUpperCase()}</span>
+          </article>
+        {/each}
+      {:else}
+        <p class="empty">No alerts right now.</p>
+      {/if}
     </div>
-  {/if}
+  </section>
 </div>
 
 <style>
   .dashboard {
+    min-height: 100vh;
+    padding: 22px;
+    display: grid;
+    gap: 18px;
+  }
+
+  .dashboard-header {
+    border-radius: 16px;
+    padding: 18px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    min-height: 104px;
+    animation: panel-rise 220ms ease;
+  }
+
+  .header-copy {
+    display: grid;
+    gap: 4px;
+  }
+
+  .dashboard-header h1 {
+    margin: 0;
+    font-size: 26px;
+  }
+
+  .dashboard-header p {
+    margin: 6px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .top-row {
+    display: grid;
+    grid-template-columns: 1.35fr 0.95fr 0.95fr;
+    gap: 16px;
+  }
+
+  .mini-globe-card {
+    all: unset;
+    display: block;
     position: relative;
-    width: 100vw;
-    height: 100vh;
+    border-radius: 16px;
+    height: clamp(220px, 34vh, 320px);
     overflow: hidden;
+    cursor: pointer;
+    border: 1px solid var(--border);
   }
 
-  .dashboard.sensitive-blur > :not(.sensitive-backdrop) {
-    filter: blur(4px);
+  .mini-globe-card:hover .globe-overlay {
+    transform: translateY(0);
   }
 
-  #cesiumContainer {
+  #miniGlobe {
     position: absolute;
     inset: 0;
   }
 
-  .overlay {
+  .globe-overlay {
     position: absolute;
-    top: 24px;
-    left: 24px;
-    padding: 20px;
-    border-radius: 16px;
-    width: min(420px, 90vw);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 14px;
     display: grid;
-    gap: 16px;
+    gap: 2px;
+    background: linear-gradient(180deg, rgba(23, 28, 31, 0), rgba(23, 28, 31, 0.92));
+    transform: translateY(8px);
+    transition: transform 180ms ease;
   }
 
-  .overlay-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+  .globe-overlay span {
+    color: var(--muted);
+    font-size: 12px;
   }
 
-  .overlay-header h2 {
+  .summary {
+    border-radius: 16px;
+    padding: 18px;
+    min-height: clamp(220px, 34vh, 320px);
+    display: grid;
+    align-content: start;
+    gap: 14px;
+    animation: panel-rise 260ms ease;
+  }
+
+  .summary h2 {
     margin: 0;
     font-size: 18px;
   }
 
-  .actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+  .card-header {
+    display: grid;
+    gap: 4px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.12);
   }
 
-  .stats {
+  .collision-summary {
+    position: relative;
+  }
+
+  .collision-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .collision-header h2 {
+    margin-bottom: 4px;
+  }
+
+  .collision-menu {
+    display: grid;
+    gap: 10px;
+  }
+
+  .collision-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 22, 20, 0.42);
+    display: grid;
+    place-items: center;
+    z-index: 300;
+  }
+
+  .collision-modal {
+    width: min(420px, 92vw);
+    padding: 16px;
+    border-radius: 14px;
+    display: grid;
+    gap: 14px;
+    border: 1px solid var(--border);
+  }
+
+  .collision-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .collision-modal-header h2 {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .summary-grid {
     display: grid;
     gap: 12px;
   }
 
-  .stats div {
+  .collision-menu label {
+    display: grid;
+    gap: 6px;
+  }
+
+  .summary-grid div {
     display: flex;
     justify-content: space-between;
-    font-size: 14px;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.08);
+  }
+
+  .collision-menu select {
+    border: 1px solid var(--border);
+    background: rgba(24, 29, 31, 0.74);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
   }
 
   .label {
     color: var(--muted);
+    font-size: 13px;
+  }
+
+  .eyebrow {
+    color: var(--accent);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 
   .error {
-    color: #ff8797;
+    color: #e69875;
     font-size: 13px;
+    margin: 12px 0 0;
   }
 
-  .legend {
-    display: flex;
-    gap: 12px;
-    font-size: 12px;
-    color: var(--muted);
-  }
-
-  .legend-item {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    display: inline-block;
-  }
-
-  .dot.nominal {
-    background: #4dd7ff;
-  }
-
-  .dot.anomaly {
-    background: #ff5a6b;
-  }
-
-  .dot.debris {
-    background: #facc15;
-  }
-
-  .controls {
-    position: absolute;
-    bottom: 24px;
-    left: 24px;
-    padding: 16px;
-    border-radius: 16px;
-    width: min(320px, 88vw);
+  .satellite-columns {
     display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 16px;
   }
 
-  .info {
-    position: absolute;
-    top: 24px;
-    right: 24px;
-    padding: 16px;
+  .column {
     border-radius: 16px;
-    width: min(320px, 88vw);
-    display: grid;
-    gap: 12px;
+    padding: 18px;
+    min-height: 280px;
+    animation: panel-rise 320ms ease;
   }
 
-  .anomaly-llm {
-    position: absolute;
-    right: 24px;
-    bottom: 24px;
-    width: min(340px, 88vw);
-    padding: 14px;
-    border-radius: 16px;
+  .section-header {
     display: grid;
-    gap: 8px;
-    z-index: 4;
+    gap: 4px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.12);
   }
 
-  .anomaly-llm h3 {
+  .column h3 {
     margin: 0;
-    font-size: 15px;
+    font-size: 16px;
   }
 
-  .anomaly-llm p {
-    margin: 0;
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 1.45;
+  .sat-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(24, 29, 31, 0.62);
+    transition:
+      transform 160ms ease,
+      border-color 160ms ease,
+      background-color 160ms ease;
   }
 
-  .anomaly-llm strong {
-    color: var(--fg);
+  .sat-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(127, 187, 179, 0.22);
+    background: rgba(28, 34, 36, 0.82);
   }
 
-  .confidence {
-    color: #ffb84d;
-  }
-
-  .chat-log {
-    max-height: 140px;
-    overflow: auto;
-    display: grid;
-    gap: 6px;
-    margin-top: 4px;
-    padding-right: 2px;
-  }
-
-  .chat-msg {
-    font-size: 12px;
+  .sat-info {
     display: grid;
     gap: 2px;
+    min-width: 0;
+  }
+
+  .sat-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .issue {
     color: var(--muted);
+    font-size: 12px;
   }
 
-  .chat-msg.user {
-    color: #d2e9ff;
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: 0 0 auto;
   }
 
-  .chat-role {
+  .operational-dot {
+    background: #a7c080;
+  }
+
+  .warning-dot {
+    background: #d9b86c;
+  }
+
+  .critical-dot {
+    background: #e67e80;
+  }
+
+  .tracked-dot {
+    background: #a7c080;
+  }
+
+  .debris-dot {
+    background: #c5a46d;
+  }
+
+  .badge {
+    margin-left: auto;
+    padding: 4px 8px;
     font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    opacity: 0.8;
-  }
-
-  .chat-form {
-    margin-top: 4px;
-  }
-
-  .chat-input {
-    width: 100%;
-    border: 1px solid var(--border);
-    background: rgba(15, 23, 42, 0.65);
-    color: var(--fg);
-    border-radius: 10px;
-    padding: 8px 10px;
-    font-size: 12px;
-    outline: none;
-  }
-
-  .chat-input:focus {
-    border-color: #60a5fa;
-  }
-
-  .sensitive-backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(2, 6, 23, 0.45);
-    display: grid;
-    place-items: center;
-    z-index: 20;
-  }
-
-  .sensitive-modal {
-    width: min(360px, 92vw);
-    padding: 16px;
-    border-radius: 14px;
-    display: grid;
-    gap: 10px;
-  }
-
-  .sensitive-modal h3 {
-    margin: 0;
-    font-size: 16px;
-  }
-
-  .sensitive-modal p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  .sensitive-input {
-    border: 1px solid var(--border);
-    background: rgba(15, 23, 42, 0.65);
-    color: var(--fg);
-    border-radius: 10px;
-    padding: 9px 10px;
-    font-size: 13px;
-    outline: none;
-  }
-
-  .sensitive-input:focus {
-    border-color: #60a5fa;
-  }
-
-  .sensitive-error {
-    color: #ff8797;
-    font-size: 12px;
-  }
-
-  .sensitive-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
-  .filters-shell {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    z-index: 3;
-  }
-
-  .filters-toggle {
-    border: 1px solid var(--border);
-    border-radius: 0 12px 12px 0;
-    padding: 12px 14px;
-    background: rgba(15, 23, 42, 0.75);
-    color: var(--fg);
-    cursor: pointer;
+    border-radius: 999px;
     font-weight: 600;
+    letter-spacing: 0.05em;
   }
 
-  .filters {
-    width: 240px;
-    padding: 16px;
-    border-radius: 12px;
-    transform: translateX(-260px);
-    transition: transform 200ms ease;
+  .operational-badge {
+    color: #a7c080;
+    background: rgba(167, 192, 128, 0.14);
   }
 
-  .filters-open .filters {
-    transform: translateX(0);
+  .warning-badge {
+    color: #d9b86c;
+    background: rgba(217, 184, 108, 0.14);
   }
 
-  .filters h3 {
-    margin: 0 0 10px 0;
-    font-size: 14px;
+  .critical-badge {
+    color: #e67e80;
+    background: rgba(230, 126, 128, 0.14);
   }
 
-  .filter-group {
-    display: grid;
-    gap: 6px;
-    margin-bottom: 10px;
-    font-size: 13px;
+  .tracked-badge {
+    color: #a7c080;
+    background: rgba(167, 192, 128, 0.14);
+  }
+
+  .debris-badge {
+    color: #c5a46d;
+    background: rgba(197, 164, 109, 0.14);
+  }
+
+  .empty {
+    margin: 10px 0 0;
     color: var(--muted);
   }
 
-  .filter-group label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  @keyframes panel-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
-  .info h3 {
-    margin: 0;
-    font-size: 16px;
+  @media (max-width: 980px) {
+    .top-row,
+    .satellite-columns {
+      grid-template-columns: 1fr;
+    }
+
+    .mini-globe-card,
+    #miniGlobe {
+      height: 220px;
+    }
   }
 
-  .tabs {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-  }
+  @media (max-width: 640px) {
+    .dashboard {
+      padding: 12px;
+      gap: 12px;
+    }
 
-  .tabs button {
-    border: 1px solid var(--border);
-    background: rgba(15, 23, 42, 0.5);
-    color: var(--muted);
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-size: 11px;
-    cursor: pointer;
-  }
+    .dashboard-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
 
-  .tabs button.active {
-    color: var(--fg);
-    border-color: #60a5fa;
-    background: rgba(37, 99, 235, 0.2);
-  }
+    .header-actions {
+      width: 100%;
+    }
 
-  .info-grid {
-    display: grid;
-    gap: 10px;
-    font-size: 13px;
-  }
-
-  .info-grid div {
-    display: flex;
-    justify-content: space-between;
-  }
-
-  .warn {
-    color: #ff8797;
-  }
-
-  .control {
-    display: grid;
-    gap: 8px;
-    font-size: 14px;
-  }
-
-  .control-header {
-    display: flex;
-    justify-content: space-between;
-    color: var(--muted);
-  }
-
-  .range {
-    width: 100%;
-    accent-color: var(--accent);
+    .header-actions .btn {
+      flex: 1;
+    }
   }
 </style>
