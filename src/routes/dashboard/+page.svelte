@@ -189,14 +189,14 @@
 </script>
 
 <svelte:head>
-  <title>LEO Prototype | Dashboard</title>
+  <title>Real-Time Conjunction Analyzer | Dashboard</title>
 </svelte:head>
 
 <div class="dashboard">
   <header class="dashboard-header glass fade-in">
     <div class="header-copy">
       <span class="eyebrow">Operations Summary</span>
-      <h1>LEO Dashboard</h1>
+      <h1>Real-Time Conjunction Analyzer</h1>
       <p>Mission snapshot and health overview</p>
     </div>
     <div class="header-actions">

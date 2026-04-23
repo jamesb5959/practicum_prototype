@@ -651,7 +651,7 @@
 </script>
 
 <svelte:head>
-  <title>LEO Prototype | Space View</title>
+  <title>Real-Time Conjunction Analyzer | Space View</title>
 </svelte:head>
 
 <div class="space-view">
@@ -662,7 +662,7 @@
       <div class="overlay-header-main">
         <div class="overlay-title">
           <span class="eyebrow">Orbital Operations</span>
-          <h2>LEO Prototype | Space View</h2>
+          <h2>Real-Time Conjunction Analyzer | Space View</h2>
         </div>
         <button class="panel-toggle btn secondary" on:click={() => (overlayMinimized = !overlayMinimized)}>
           {overlayMinimized ? 'Expand' : 'Minimize'}
