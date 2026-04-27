@@ -121,3 +121,24 @@ input {
     background-position: 3% 2%, 96% 3%, 0% 0%;
   }
 }
+
+@media (min-width: 5000px), (min-height: 3000px) {
+  :root {
+    --classification-bar-height: 30px;
+  }
+
+  html,
+  body {
+    font-size: 24px;
+  }
+
+  .btn {
+    border-radius: 14px;
+    padding: 14px 22px;
+  }
+
+  .input {
+    padding: 16px 18px;
+    border-radius: 14px;
+  }
+}

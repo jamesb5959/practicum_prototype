@@ -58,8 +58,10 @@ Common values:
 
 - `APP_BASE_URL=http://localhost:5173`
 - `KEYCLOAK_BASE_URL=http://localhost:8080`
+- `KEYCLOAK_INTERNAL_URL=http://localhost:8080`
 - `KEYCLOAK_REALM=demo`
 - `KEYCLOAK_CLIENT_ID=svelte-web`
+- `KEYCLOAK_DIRECT_LOGIN=false`
 - `TLE_PREDICTION_PYTHON=python3`
 - `TLE_PREDICTION_MODEL_PATH=./TLE_Prediction/models/mldsgp4_best_model.pth`
 
@@ -116,6 +118,135 @@ App URL:
 Keycloak admin:
 
 - [http://localhost:8080/admin](http://localhost:8080/admin)
+
+## Running With Docker Only
+
+### Docker files used
+
+- [Dockerfile](Dockerfile)
+  - app image with Node, Python, runtime model assets, and SvelteKit build output
+- [docker-compose.full.yml](docker-compose.full.yml)
+  - full stack for app + Keycloak + Postgres
+- [Dockerfile.cuda](Dockerfile.cuda)
+  - optional CUDA-enabled app image for NVIDIA hosts
+- [docker-compose.gpu.yml](docker-compose.gpu.yml)
+  - optional NVIDIA GPU override for the app container
+- [.env.docker.example](.env.docker.example)
+  - app env defaults for the Docker stack
+- [setup-docker.sh](setup-docker.sh)
+  - Docker bootstrap / validation / image build
+- [start-docker.sh](start-docker.sh)
+  - Docker stack startup
+- [setup-docker.ps1](setup-docker.ps1)
+  - PowerShell bootstrap for Windows Docker hosts
+- [start-docker.ps1](start-docker.ps1)
+  - PowerShell Docker stack control for Windows
+
+### 1. Docker bootstrap
+
+```bash
+chmod +x setup-docker.sh start-docker.sh
+./setup-docker.sh
+```
+
+GPU build on NVIDIA hosts:
+
+```bash
+./setup-docker.sh gpu
+```
+
+Windows PowerShell:
+
+```powershell
+.\setup-docker.ps1
+```
+
+GPU build on NVIDIA hosts:
+
+```powershell
+.\setup-docker.ps1 gpu
+```
+
+What `setup-docker.sh` does:
+
+1. validates that the Warpcore CSV exists in `static/data/`
+2. validates that the current model exists in `TLE_Prediction/models/`
+3. copies `static/data/88_most_recent_satellites_LEO.csv` into `TLE_Prediction/data/` if needed
+4. copies `.env.docker.example` to `.env.docker` if needed
+5. copies `keycloak-server/.env.example` to `keycloak-server/.env` if needed
+6. builds the full Docker stack images
+
+### 2. Start the Docker stack
+
+```bash
+./start-docker.sh up
+```
+
+GPU run on NVIDIA hosts:
+
+```bash
+./start-docker.sh up gpu
+```
+
+Windows PowerShell:
+
+```powershell
+.\start-docker.ps1 up
+```
+
+GPU run on NVIDIA hosts:
+
+```powershell
+.\start-docker.ps1 up gpu
+```
+
+This starts:
+
+- the SvelteKit app
+- the embedded Python prediction runtime inside the app container
+- Keycloak
+- Postgres for Keycloak
+
+URLs:
+
+- App: [http://localhost:5173](http://localhost:5173)
+- Keycloak: [http://localhost:8080](http://localhost:8080)
+- Keycloak admin: [http://localhost:8080/admin](http://localhost:8080/admin)
+
+To stop or reset the Docker stack:
+
+```bash
+./start-docker.sh down
+./start-docker.sh reset
+```
+
+Windows PowerShell:
+
+```powershell
+.\start-docker.ps1 down
+.\start-docker.ps1 reset
+```
+
+GPU stop or reset:
+
+```bash
+./start-docker.sh down gpu
+./start-docker.sh reset gpu
+```
+
+```powershell
+.\start-docker.ps1 down gpu
+.\start-docker.ps1 reset gpu
+```
+
+### Docker environment notes
+
+- Browser-facing login redirects still use `KEYCLOAK_BASE_URL=http://localhost:8080`
+- Container-to-container token exchange uses `KEYCLOAK_INTERNAL_URL=http://keycloak:8080`
+- The Docker path sets `KEYCLOAK_DIRECT_LOGIN=true` so the app uses its own login page and completes the token exchange server-side instead of redirecting the browser through the Keycloak login page over plain HTTP
+- The Docker app uses `TLE_PREDICTION_MODEL_PATH=/app/TLE_Prediction/models/mldsgp4_best_model.pth`
+- GPU mode uses [Dockerfile.cuda](Dockerfile.cuda) and [docker-compose.gpu.yml](docker-compose.gpu.yml), requests `gpus: all`, and sets `TLE_PREDICTION_DEVICE=cuda`
+- The existing local `setup.sh` and `start.sh` are unchanged and still work for the non-Docker path
 
 ## How the App Works
 
@@ -181,8 +312,28 @@ Relevant files:
   - local bootstrap / validation
 - [start.sh](start.sh)
   - convenience script for `npm run dev`
+- [setup-docker.sh](setup-docker.sh)
+  - Docker bootstrap / validation / image build
+- [start-docker.sh](start-docker.sh)
+  - Docker stack startup
+- [setup-docker.ps1](setup-docker.ps1)
+  - PowerShell bootstrap for Windows Docker hosts
+- [start-docker.ps1](start-docker.ps1)
+  - PowerShell Docker stack control for Windows
 - [.env.example](.env.example)
   - example environment values for the SvelteKit app
+- [.env.docker.example](.env.docker.example)
+  - example environment values for the Dockerized app flow
+- [Dockerfile](Dockerfile)
+  - app image definition with Node + Python runtime
+- [docker-compose.full.yml](docker-compose.full.yml)
+  - full Docker stack for app + Keycloak + Postgres
+- [Dockerfile.cuda](Dockerfile.cuda)
+  - CUDA-enabled app image for NVIDIA Docker hosts
+- [docker-compose.gpu.yml](docker-compose.gpu.yml)
+  - optional GPU override for NVIDIA Docker hosts
+- [.dockerignore](.dockerignore)
+  - Docker build exclusions for local-only and generated files
 
 ### `src/`
 
@@ -211,6 +362,7 @@ Application source code.
 
 - [src/lib/server/keycloak.ts](src/lib/server/keycloak.ts)
   - login/callback/logout helpers
+  - supports separate public and internal Keycloak URLs for Dockerized deployment
 - [src/lib/server/tlePrediction.ts](src/lib/server/tlePrediction.ts)
   - Python bridge for runtime prediction
   - model warmup
@@ -304,6 +456,8 @@ Application source code.
 
 - [keycloak-server/docker-compose.yml](keycloak-server/docker-compose.yml)
   - Keycloak + Postgres local stack
+- [keycloak-server/.env.example](keycloak-server/.env.example)
+  - demo Keycloak / Postgres env values
 - [keycloak-server/README.md](keycloak-server/README.md)
   - auth server setup notes
 - [keycloak-server/realm/demo-realm.json](keycloak-server/realm/demo-realm.json)

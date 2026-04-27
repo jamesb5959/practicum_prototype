@@ -189,14 +189,14 @@
 </script>
 
 <svelte:head>
-  <title>LEO Prototype | Dashboard</title>
+  <title>Real-Time Conjunction Analyzer | Dashboard</title>
 </svelte:head>
 
 <div class="dashboard">
   <header class="dashboard-header glass fade-in">
     <div class="header-copy">
       <span class="eyebrow">Operations Summary</span>
-      <h1>LEO Dashboard</h1>
+      <h1>Real-Time Conjunction Analyzer</h1>
       <p>Mission snapshot and health overview</p>
     </div>
     <div class="header-actions">
@@ -724,6 +724,105 @@
 
     .header-actions .btn {
       flex: 1;
+    }
+  }
+
+  @media (min-width: 5000px), (min-height: 3000px) {
+    .dashboard {
+      padding: 40px;
+      gap: 28px;
+    }
+
+    .dashboard-header {
+      border-radius: 24px;
+      padding: 28px 32px;
+      min-height: 148px;
+      gap: 20px;
+    }
+
+    .dashboard-header h1 {
+      font-size: 46px;
+    }
+
+    .dashboard-header p {
+      font-size: 24px;
+      margin-top: 10px;
+    }
+
+    .header-actions {
+      gap: 14px;
+    }
+
+    .top-row,
+    .satellite-columns {
+      gap: 24px;
+    }
+
+    .mini-globe-card,
+    .summary {
+      min-height: clamp(360px, 32vh, 520px);
+      border-radius: 24px;
+    }
+
+    .summary {
+      padding: 28px;
+      gap: 20px;
+    }
+
+    .summary h2,
+    .collision-modal-header h2 {
+      font-size: 30px;
+    }
+
+    .label,
+    .globe-overlay span {
+      font-size: 20px;
+    }
+
+    .eyebrow {
+      font-size: 16px;
+    }
+
+    .summary-grid {
+      gap: 18px;
+    }
+
+    .summary-grid div {
+      padding-bottom: 14px;
+    }
+
+    .column {
+      border-radius: 24px;
+      padding: 28px;
+      min-height: 420px;
+    }
+
+    .column h3 {
+      font-size: 28px;
+    }
+
+    .sat-card {
+      padding: 18px;
+      border-radius: 16px;
+      gap: 16px;
+    }
+
+    .sat-name {
+      font-size: 22px;
+    }
+
+    .issue {
+      font-size: 18px;
+    }
+
+    .status-dot {
+      width: 14px;
+      height: 14px;
+    }
+
+    .badge {
+      font-size: 14px;
+      padding: 7px 12px;
     }
   }
 </style>

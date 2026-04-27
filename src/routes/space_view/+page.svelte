@@ -651,7 +651,7 @@
 </script>
 
 <svelte:head>
-  <title>LEO Prototype | Space View</title>
+  <title>Real-Time Conjunction Analyzer | Space View</title>
 </svelte:head>
 
 <div class="space-view">
@@ -662,7 +662,7 @@
       <div class="overlay-header-main">
         <div class="overlay-title">
           <span class="eyebrow">Orbital Operations</span>
-          <h2>LEO Prototype | Space View</h2>
+          <h2>Real-Time Conjunction Analyzer | Space View</h2>
         </div>
         <button class="panel-toggle btn secondary" on:click={() => (overlayMinimized = !overlayMinimized)}>
           {overlayMinimized ? 'Expand' : 'Minimize'}
@@ -1374,6 +1374,122 @@
 
     .filters {
       width: min(240px, 82vw);
+    }
+  }
+
+  @media (min-width: 5000px), (min-height: 3000px) {
+    .overlay {
+      top: 36px;
+      left: 36px;
+      padding: 24px 28px;
+      border-radius: 24px;
+      width: min(860px, 42vw);
+      gap: 18px;
+    }
+
+    .overlay h2 {
+      font-size: 38px;
+    }
+
+    .overlay .eyebrow {
+      font-size: 20px;
+    }
+
+    .controls {
+      bottom: 36px;
+      left: 36px;
+      width: min(420px, 26vw);
+      padding: 18px;
+      border-radius: 22px;
+      gap: 16px;
+    }
+
+    .controls-minimized {
+      padding: 14px 16px;
+    }
+
+    .controls-header,
+    .control-header,
+    .panel-section {
+      gap: 12px;
+    }
+
+    .control,
+    .filter-group,
+    .trajectory-scope select,
+    .info-grid,
+    .hover-tooltip {
+      font-size: 18px;
+    }
+
+    .section-heading,
+    .filters h3 {
+      font-size: 18px;
+    }
+
+    .filters-shell {
+      top: calc(50% + 88px);
+      gap: 16px;
+    }
+
+    .filters-toggle {
+      border-radius: 0 16px 16px 0;
+      padding: 14px 18px;
+      font-size: 18px;
+    }
+
+    .filters {
+      width: 320px;
+      padding: 18px;
+      border-radius: 18px;
+      margin-left: 12px;
+    }
+
+    .info {
+      top: 36px;
+      right: 36px;
+      width: min(520px, 28vw);
+      padding: 22px;
+      border-radius: 22px;
+      gap: 12px;
+      max-height: calc(100vh - var(--classification-bar-height) - 72px);
+    }
+
+    .info-minimized {
+      width: min(340px, 22vw);
+    }
+
+    .info h3 {
+      font-size: 24px;
+    }
+
+    .tabs {
+      border-radius: 14px;
+      padding: 4px;
+      gap: 6px;
+    }
+
+    .tabs button {
+      min-height: 34px;
+      font-size: 15px;
+      padding: 7px 10px;
+      border-radius: 10px;
+    }
+
+    .info-grid div {
+      gap: 18px;
+      padding-bottom: 8px;
+    }
+
+    .operator-badge {
+      font-size: 14px;
+      padding: 6px 10px;
+    }
+
+    .hover-tooltip {
+      min-width: 260px;
+      padding: 14px 16px;
+      border-radius: 16px;
     }
   }
 </style>
