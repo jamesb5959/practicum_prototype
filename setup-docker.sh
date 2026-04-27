@@ -65,9 +65,20 @@ source .env.docker
 source keycloak-server/.env
 set +a
 
+COMPOSE_FILES=(-f docker-compose.full.yml)
+MODE="${1:-cpu}"
+
+if [ "$MODE" = "gpu" ]; then
+  COMPOSE_FILES+=(-f docker-compose.gpu.yml)
+  echo "GPU Docker mode enabled."
+elif [ "$MODE" != "cpu" ]; then
+  echo "Usage: ./setup-docker.sh [cpu|gpu]"
+  exit 1
+fi
+
 echo "Building Docker images..."
-docker compose -f docker-compose.full.yml build
+docker compose "${COMPOSE_FILES[@]}" build
 
 echo "Docker setup complete."
 echo "Next step:"
-echo "  ./start-docker.sh"
+echo "  ./start-docker.sh up ${MODE}"

@@ -1,12 +1,14 @@
 param(
   [ValidateSet("up", "down", "reset")]
-  [string]$Action
+  [string]$Action,
+  [ValidateSet("cpu", "gpu")]
+  [string]$Mode = "cpu"
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not $Action) {
-  Write-Host "Usage: .\start-docker.ps1 {up|down|reset}"
+  Write-Host "Usage: .\start-docker.ps1 {up|down|reset} [cpu|gpu]"
   Write-Host "  up    -> start app, Keycloak, and Postgres"
   Write-Host "  down  -> stop containers"
   Write-Host "  reset -> stop containers and remove volumes"
@@ -77,10 +79,19 @@ function Check-PortConflict {
 
 Ensure-EnvFiles
 
+if ($Mode -eq "gpu") {
+  $composeFiles = @("-f", "docker-compose.full.yml", "-f", "docker-compose.gpu.yml")
+} else {
+  $composeFiles = @("-f", "docker-compose.full.yml")
+}
+
 switch ($Action) {
   "up" {
     Check-PortConflict
-    docker compose -f docker-compose.full.yml up -d
+    if ($Mode -eq "gpu") {
+      Write-Host "GPU Docker mode enabled."
+    }
+    docker compose @composeFiles up -d
     $localIp = Get-LocalIp
     Write-Host "Docker stack started."
     Write-Host "App: http://localhost:5173"
@@ -91,9 +102,9 @@ switch ($Action) {
     }
   }
   "down" {
-    docker compose -f docker-compose.full.yml down
+    docker compose @composeFiles down
   }
   "reset" {
-    docker compose -f docker-compose.full.yml down -v
+    docker compose @composeFiles down -v
   }
 }

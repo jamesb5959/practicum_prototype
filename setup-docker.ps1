@@ -1,3 +1,8 @@
+param(
+  [ValidateSet("cpu", "gpu")]
+  [string]$Mode = "cpu"
+)
+
 $ErrorActionPreference = "Stop"
 
 $RootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -69,9 +74,16 @@ Get-Content "keycloak-server/.env" | ForEach-Object {
   [System.Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
 }
 
+if ($Mode -eq "gpu") {
+  Write-Host "GPU Docker mode enabled."
+  $composeFiles = @("-f", "docker-compose.full.yml", "-f", "docker-compose.gpu.yml")
+} else {
+  $composeFiles = @("-f", "docker-compose.full.yml")
+}
+
 Write-Host "Building Docker images..."
-docker compose -f docker-compose.full.yml build
+docker compose @composeFiles build
 
 Write-Host "Docker setup complete."
 Write-Host "Next step:"
-Write-Host "  .\start-docker.ps1 up"
+Write-Host "  .\start-docker.ps1 up $Mode"

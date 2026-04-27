@@ -53,7 +53,16 @@ case "${1:-}" in
   up)
     ensure_env_files
     check_port_conflict
-    docker compose -f docker-compose.full.yml up -d
+    MODE="${2:-cpu}"
+    COMPOSE_FILES=(-f docker-compose.full.yml)
+    if [ "$MODE" = "gpu" ]; then
+      COMPOSE_FILES+=(-f docker-compose.gpu.yml)
+      echo "GPU Docker mode enabled."
+    elif [ "$MODE" != "cpu" ]; then
+      echo "Usage: $0 {up|down|reset} [cpu|gpu]"
+      exit 1
+    fi
+    docker compose "${COMPOSE_FILES[@]}" up -d
     LOCAL_IP="$(detect_local_ip || true)"
     echo "Docker stack started."
     echo "App: http://localhost:5173"
@@ -65,17 +74,29 @@ case "${1:-}" in
     ;;
   down)
     ensure_env_files
-    docker compose -f docker-compose.full.yml down
+    MODE="${2:-cpu}"
+    COMPOSE_FILES=(-f docker-compose.full.yml)
+    if [ "$MODE" = "gpu" ]; then
+      COMPOSE_FILES+=(-f docker-compose.gpu.yml)
+    fi
+    docker compose "${COMPOSE_FILES[@]}" down
     ;;
   reset)
     ensure_env_files
-    docker compose -f docker-compose.full.yml down -v
+    MODE="${2:-cpu}"
+    COMPOSE_FILES=(-f docker-compose.full.yml)
+    if [ "$MODE" = "gpu" ]; then
+      COMPOSE_FILES+=(-f docker-compose.gpu.yml)
+    fi
+    docker compose "${COMPOSE_FILES[@]}" down -v
     ;;
   *)
-    echo "Usage: $0 {up|down|reset}"
+    echo "Usage: $0 {up|down|reset} [cpu|gpu]"
     echo "  up    -> start app, Keycloak, and Postgres"
     echo "  down  -> stop containers"
     echo "  reset -> stop containers and remove volumes"
+    echo "  cpu   -> default runtime"
+    echo "  gpu   -> NVIDIA CUDA runtime"
     exit 1
     ;;
 esac
