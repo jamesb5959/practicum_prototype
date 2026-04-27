@@ -673,7 +673,7 @@
           {loading ? 'Refreshing...' : 'Refresh Data'}
         </button>
         <button class="btn secondary" on:click={handleDashboard}>Dashboard</button>
-        <button class="btn secondary" on:click={handleLogout}>Logout</button>
+        <button class="btn danger" on:click={handleLogout}>Logout</button>
       </div>
     </div>
 
