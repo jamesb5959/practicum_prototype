@@ -57,20 +57,33 @@ def main() -> None:
     tle = dsgp4.tle.TLE(tle_lines)
     dsgp4.initialize_tle(tle)
 
+    requested_device = os.environ.get("TLE_PREDICTION_DEVICE", "cpu").strip().lower()
+    if requested_device == "cuda" and torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+
     ml_dsgp4 = dsgp4.mldsgp4(hidden_size=100)
-    ml_dsgp4.load_model(path=str(model_path), device="cpu")
+    ml_dsgp4.load_model(path=str(model_path), device=device)
     ml_dsgp4.eval()
 
     epoch = parse_tle_epoch(args.line1)
     now_utc = datetime.now(timezone.utc)
     start_minutes = max(0.0, (now_utc - epoch).total_seconds() / 60.0)
-    tsinces = torch.arange(start_minutes, start_minutes + hours * 60 + 1, 60, dtype=torch.float32)
+    tsinces = torch.arange(
+        start_minutes,
+        start_minutes + hours * 60 + 1,
+        60,
+        dtype=torch.float32,
+        device=device,
+    )
     with torch.no_grad():
         prediction_norm = ml_dsgp4(tle, tsinces)
-    prediction = unnormalize_state(prediction_norm, ml_dsgp4)
+    prediction = unnormalize_state(prediction_norm, ml_dsgp4).detach().cpu()
+    tsince_values = tsinces.detach().cpu().tolist()
 
     samples = []
-    for i, minutes in enumerate(tsinces.tolist()):
+    for i, minutes in enumerate(tsince_values):
         position = prediction[i, :3].tolist()
         velocity = prediction[i, 3:].tolist()
         sample_time = epoch + timedelta(minutes=float(minutes))
@@ -91,6 +104,7 @@ def main() -> None:
                 "frame": "TEME",
                 "hours": hours,
                 "sampleStepHours": 1,
+                "device": device,
                 "startMinutesSinceEpoch": start_minutes,
                 "samples": samples,
             }

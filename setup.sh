@@ -17,6 +17,9 @@ TEXTURE_PATH="static/textures/earth.jpg"
 echo "Installing Node dependencies..."
 npm install
 
+echo "Syncing Cesium static assets..."
+node scripts/sync-cesium-assets.mjs
+
 echo "Ensuring project directories exist..."
 mkdir -p static/data static/textures TLE_Prediction/cache TLE_Prediction/data TLE_Prediction/models
 

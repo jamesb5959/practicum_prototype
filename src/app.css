@@ -83,6 +83,17 @@ input {
   box-shadow: 0 8px 20px rgba(20, 27, 24, 0.24);
 }
 
+.btn.danger {
+  background: linear-gradient(135deg, #cf6a6a, #b84f5f);
+  color: #f7f1ea;
+  border-color: rgba(184, 79, 95, 0.36);
+}
+
+.btn.danger:hover {
+  box-shadow: 0 10px 24px rgba(184, 79, 95, 0.28);
+  filter: saturate(1.03);
+}
+
 .input {
   width: 100%;
   padding: 12px 14px;
@@ -119,5 +130,26 @@ input {
   }
   to {
     background-position: 3% 2%, 96% 3%, 0% 0%;
+  }
+}
+
+@media (min-width: 5000px), (min-height: 3000px) {
+  :root {
+    --classification-bar-height: 30px;
+  }
+
+  html,
+  body {
+    font-size: 24px;
+  }
+
+  .btn {
+    border-radius: 14px;
+    padding: 14px 22px;
+  }
+
+  .input {
+    padding: 16px 18px;
+    border-radius: 14px;
   }
 }

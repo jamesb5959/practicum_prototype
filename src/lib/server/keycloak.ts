@@ -6,6 +6,7 @@ import { redirect, type Cookies } from '@sveltejs/kit';
 const SESSION_COOKIE = 'kc_demo_session';
 
 const keycloakBaseUrl = env.KEYCLOAK_BASE_URL ?? 'http://localhost:8080';
+const keycloakInternalUrl = env.KEYCLOAK_INTERNAL_URL ?? keycloakBaseUrl;
 const realm = env.KEYCLOAK_REALM ?? 'demo';
 const clientId = env.KEYCLOAK_CLIENT_ID ?? 'svelte-web';
 const appBaseUrl = env.APP_BASE_URL ?? 'http://localhost:5173';
@@ -30,6 +31,12 @@ type TokenResponse = {
   token_type: string;
 };
 
+type TokenClaims = {
+  preferred_username?: string;
+  email?: string;
+  name?: string;
+};
+
 export function getSessionCookieName() {
   return SESSION_COOKIE;
 }
@@ -47,6 +54,10 @@ export function getKeycloakLogoutUrl() {
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('post_logout_redirect_uri', `${appBaseUrl}/login`);
   return url.toString();
+}
+
+export function useDirectLogin() {
+  return (env.KEYCLOAK_DIRECT_LOGIN ?? 'false').toLowerCase() === 'true';
 }
 
 export function readSession(cookies: Cookies): Session | null {
@@ -112,7 +123,7 @@ export async function finishLogin(cookies: Cookies, url: URL) {
   loginStateStore.delete(returnedState);
 
   const response = await fetch(
-    `${keycloakBaseUrl}/realms/${realm}/protocol/openid-connect/token`,
+    `${keycloakInternalUrl}/realms/${realm}/protocol/openid-connect/token`,
     {
       method: 'POST',
       headers: {
@@ -134,6 +145,69 @@ export async function finishLogin(cookies: Cookies, url: URL) {
   }
 
   const tokenResponse = (await response.json()) as TokenResponse;
+  setSessionCookie(cookies, tokenResponse);
+
+  throw redirect(302, safeReturnTo(loginState.returnTo));
+}
+
+export async function loginWithPassword(
+  cookies: Cookies,
+  username: string,
+  password: string,
+  returnTo: string
+) {
+  const response = await fetch(
+    `${keycloakInternalUrl}/realms/${realm}/protocol/openid-connect/token`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded'
+      },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        client_id: clientId,
+        username,
+        password,
+        scope: 'openid profile email'
+      })
+    }
+  );
+
+  if (!response.ok) {
+    clearAuthCookies(cookies);
+    return false;
+  }
+
+  const tokenResponse = (await response.json()) as TokenResponse;
+  setSessionCookie(cookies, tokenResponse);
+  throw redirect(302, safeReturnTo(returnTo));
+}
+
+function cookieOptions(maxAge: number) {
+  const useSecureCookies = !dev && appBaseUrl.startsWith('https://');
+  return {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    secure: useSecureCookies,
+    path: '/',
+    maxAge
+  };
+}
+
+function safeReturnTo(returnTo: string) {
+  return returnTo.startsWith('/') ? returnTo : '/dashboard';
+}
+
+function decodeJwt(token: string): TokenClaims {
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    throw new Error('Invalid token');
+  }
+
+  return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as TokenClaims;
+}
+
+function setSessionCookie(cookies: Cookies, tokenResponse: TokenResponse) {
   const claims = decodeJwt(tokenResponse.id_token);
   const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
 
@@ -148,31 +222,6 @@ export async function finishLogin(cookies: Cookies, url: URL) {
   };
 
   cookies.set(SESSION_COOKIE, JSON.stringify(session), cookieOptions(tokenResponse.expires_in));
-
-  throw redirect(302, safeReturnTo(loginState.returnTo));
-}
-
-function cookieOptions(maxAge: number) {
-  return {
-    httpOnly: true,
-    sameSite: 'lax' as const,
-    secure: !dev,
-    path: '/',
-    maxAge
-  };
-}
-
-function safeReturnTo(returnTo: string) {
-  return returnTo.startsWith('/') ? returnTo : '/dashboard';
-}
-
-function decodeJwt(token: string): Record<string, string> {
-  const parts = token.split('.');
-  if (parts.length < 2) {
-    throw new Error('Invalid token');
-  }
-
-  return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as Record<string, string>;
 }
 
 function pruneLoginStateStore() {

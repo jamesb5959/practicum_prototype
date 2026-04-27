@@ -189,24 +189,30 @@
 </script>
 
 <svelte:head>
-  <title>LEO Prototype | Dashboard</title>
+  <title>Real-Time Conjunction Analyzer | Dashboard</title>
 </svelte:head>
 
 <div class="dashboard">
   <header class="dashboard-header glass fade-in">
     <div class="header-copy">
       <span class="eyebrow">Operations Summary</span>
-      <h1>LEO Dashboard</h1>
+      <h1>Real-Time Conjunction Analyzer</h1>
       <p>Mission snapshot and health overview</p>
     </div>
-    <div class="header-actions">
-      <button class="btn secondary" on:click={loadSummary} disabled={loading}>
-        {loading ? 'Refreshing...' : 'Refresh'}
-      </button>
-      <button class="btn secondary" on:click={() => (collisionMenuOpen = true)}>
-        Configure
-      </button>
-      <button class="btn secondary" on:click={handleLogout}>Logout</button>
+    <div class="header-actions-group">
+      <div class="header-logos" aria-label="Partner logos">
+        <img src="/logos/UTEP_Classic_Logo.svg" alt="UTEP logo" class="header-logo utep-logo" />
+        <img src="/logos/space-force.png" alt="United States Space Force logo" class="header-logo space-force-logo" />
+      </div>
+      <div class="header-actions">
+        <button class="btn secondary" on:click={loadSummary} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </button>
+        <button class="btn secondary" on:click={() => (collisionMenuOpen = true)}>
+          Configure
+        </button>
+        <button class="btn danger" on:click={handleLogout}>Logout</button>
+      </div>
     </div>
   </header>
 
@@ -387,10 +393,41 @@
     font-size: 14px;
   }
 
+  .header-actions-group {
+    display: grid;
+    justify-items: end;
+    gap: 12px;
+  }
+
+  .header-logos {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    width: 100%;
+  }
+
+  .header-logo {
+    display: block;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 12px rgba(16, 22, 20, 0.24));
+  }
+
+  .utep-logo {
+    height: 48px;
+    width: auto;
+  }
+
+  .space-force-logo {
+    height: 50px;
+    width: auto;
+  }
+
   .header-actions {
     display: flex;
     gap: 8px;
     align-items: center;
+    margin-top: 4px;
   }
 
   .top-row {
@@ -718,12 +755,134 @@
       align-items: flex-start;
     }
 
+    .header-actions-group {
+      width: 100%;
+      justify-items: stretch;
+    }
+
+    .header-logos {
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
+
     .header-actions {
       width: 100%;
+      justify-content: flex-start;
     }
 
     .header-actions .btn {
       flex: 1;
+    }
+  }
+
+  @media (min-width: 5000px), (min-height: 3000px) {
+    .dashboard {
+      padding: 40px;
+      gap: 28px;
+    }
+
+    .dashboard-header {
+      border-radius: 24px;
+      padding: 28px 32px;
+      min-height: 148px;
+      gap: 20px;
+    }
+
+    .dashboard-header h1 {
+      font-size: 46px;
+    }
+
+    .dashboard-header p {
+      font-size: 24px;
+      margin-top: 10px;
+    }
+
+    .header-actions {
+      gap: 14px;
+    }
+
+    .header-logos {
+      gap: 20px;
+    }
+
+    .utep-logo {
+      height: 68px;
+    }
+
+    .space-force-logo {
+      height: 70px;
+    }
+
+    .top-row,
+    .satellite-columns {
+      gap: 24px;
+    }
+
+    .mini-globe-card,
+    .summary {
+      min-height: clamp(360px, 32vh, 520px);
+      border-radius: 24px;
+    }
+
+    .summary {
+      padding: 28px;
+      gap: 20px;
+    }
+
+    .summary h2,
+    .collision-modal-header h2 {
+      font-size: 30px;
+    }
+
+    .label,
+    .globe-overlay span {
+      font-size: 20px;
+    }
+
+    .eyebrow {
+      font-size: 16px;
+    }
+
+    .summary-grid {
+      gap: 18px;
+    }
+
+    .summary-grid div {
+      padding-bottom: 14px;
+    }
+
+    .column {
+      border-radius: 24px;
+      padding: 28px;
+      min-height: 420px;
+    }
+
+    .column h3 {
+      font-size: 28px;
+    }
+
+    .sat-card {
+      padding: 18px;
+      border-radius: 16px;
+      gap: 16px;
+    }
+
+    .sat-name {
+      font-size: 22px;
+    }
+
+    .issue {
+      font-size: 18px;
+    }
+
+    .status-dot {
+      width: 14px;
+      height: 14px;
+    }
+
+    .badge {
+      font-size: 14px;
+      padding: 7px 12px;
     }
   }
 </style>
