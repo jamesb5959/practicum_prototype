@@ -199,14 +199,20 @@
       <h1>Real-Time Conjunction Analyzer</h1>
       <p>Mission snapshot and health overview</p>
     </div>
-    <div class="header-actions">
-      <button class="btn secondary" on:click={loadSummary} disabled={loading}>
-        {loading ? 'Refreshing...' : 'Refresh'}
-      </button>
-      <button class="btn secondary" on:click={() => (collisionMenuOpen = true)}>
-        Configure
-      </button>
-      <button class="btn secondary" on:click={handleLogout}>Logout</button>
+    <div class="header-actions-group">
+      <div class="header-logos" aria-label="Partner logos">
+        <img src="/logos/UTEP_Classic_Logo.svg" alt="UTEP logo" class="header-logo utep-logo" />
+        <img src="/logos/space-force.png" alt="United States Space Force logo" class="header-logo space-force-logo" />
+      </div>
+      <div class="header-actions">
+        <button class="btn secondary" on:click={loadSummary} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Refresh'}
+        </button>
+        <button class="btn secondary" on:click={() => (collisionMenuOpen = true)}>
+          Configure
+        </button>
+        <button class="btn danger" on:click={handleLogout}>Logout</button>
+      </div>
     </div>
   </header>
 
@@ -387,10 +393,41 @@
     font-size: 14px;
   }
 
+  .header-actions-group {
+    display: grid;
+    justify-items: end;
+    gap: 12px;
+  }
+
+  .header-logos {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    width: 100%;
+  }
+
+  .header-logo {
+    display: block;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 12px rgba(16, 22, 20, 0.24));
+  }
+
+  .utep-logo {
+    height: 48px;
+    width: auto;
+  }
+
+  .space-force-logo {
+    height: 50px;
+    width: auto;
+  }
+
   .header-actions {
     display: flex;
     gap: 8px;
     align-items: center;
+    margin-top: 4px;
   }
 
   .top-row {
@@ -718,8 +755,19 @@
       align-items: flex-start;
     }
 
+    .header-actions-group {
+      width: 100%;
+      justify-items: stretch;
+    }
+
+    .header-logos {
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
+
     .header-actions {
       width: 100%;
+      justify-content: flex-start;
     }
 
     .header-actions .btn {
@@ -751,6 +799,18 @@
 
     .header-actions {
       gap: 14px;
+    }
+
+    .header-logos {
+      gap: 20px;
+    }
+
+    .utep-logo {
+      height: 68px;
+    }
+
+    .space-force-logo {
+      height: 70px;
     }
 
     .top-row,

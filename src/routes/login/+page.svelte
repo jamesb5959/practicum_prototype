@@ -18,6 +18,10 @@
   <div class="login-card glass fade-in">
     <div class="login-header">
       <h1>Real-Time Conjunction Analyzer</h1>
+      <div class="login-logos" aria-label="Partner logos">
+        <img src="/logos/UTEP_Classic_Logo.svg" alt="UTEP logo" class="login-logo utep-logo" />
+        <img src="/logos/space-force.png" alt="United States Space Force logo" class="login-logo space-force-logo" />
+      </div>
     </div>
 
     {#if error}
@@ -58,15 +62,48 @@
   }
 
   .login-card {
-    width: min(420px, 92vw);
-    padding: 32px;
+    width: min(560px, 94vw);
+    padding: 36px;
     border-radius: 20px;
   }
 
+  .login-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 22px;
+  }
+
   .login-header h1 {
-    margin: 0 0 20px 0;
+    margin: 0;
     font-size: 28px;
     letter-spacing: 0.4px;
+    max-width: 340px;
+  }
+
+  .login-logos {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    flex: 0 0 auto;
+  }
+
+  .login-logo {
+    display: block;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 12px rgba(16, 22, 20, 0.24));
+  }
+
+  .utep-logo {
+    height: 38px;
+    width: auto;
+  }
+
+  .space-force-logo {
+    height: 42px;
+    width: auto;
   }
 
   .error {
@@ -106,5 +143,26 @@
     width: 100%;
     justify-content: center;
     text-decoration: none;
+  }
+
+  @media (max-width: 640px) {
+    .login-card {
+      width: min(480px, 94vw);
+      padding: 28px;
+    }
+
+    .login-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .login-header h1 {
+      max-width: none;
+    }
+
+    .login-logos {
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
   }
 </style>
