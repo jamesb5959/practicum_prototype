@@ -32,6 +32,9 @@
   let hoverX = 0;
   let hoverY = 0;
   let hoverHandler;
+  let trajectoryRefreshTimer;
+  const TRAJECTORY_CACHE_TTL_MS = 60 * 1000;
+  const trajectoryPositionCache = new Map();
 
   let allSatellites = [];
   let tracked = [];
@@ -50,6 +53,7 @@
   let overlayMinimized = false;
   let infoMinimized = false;
   let displayMinimized = false;
+  let selectedTrajectorySatelliteNumber = null;
   const LEO_MAX_KM = 2000;
   const MEO_MAX_KM = 35786;
   const MAX_PROTOTYPE_SATELLITES = 2000;
@@ -135,6 +139,7 @@
     viewer.selectedEntityChanged.addEventListener((entity) => {
       if (!entity) {
         selectedSat = null;
+        selectedTrajectorySatelliteNumber = null;
         infoTab = 'telemetry';
         clearPredictionTrajectories();
         return;
@@ -147,6 +152,7 @@
         return;
       }
       selectedSat = match.meta;
+      selectedTrajectorySatelliteNumber = match.meta?.satelliteNumber ?? null;
       infoTab = 'telemetry';
     });
 
@@ -178,6 +184,13 @@
 
     refreshTimer = setInterval(loadData, 10 * 60 * 1000);
     positionTimer = setInterval(updatePositions, 5000);
+    trajectoryRefreshTimer = setInterval(() => {
+      if (!viewer || !CesiumLib || (!showTrajectoryLines && !tracked.some((item) => item.meta?.anomaly))) {
+        return;
+      }
+      clearTrajectoryCache();
+      void loadPredictionTrajectories();
+    }, TRAJECTORY_CACHE_TTL_MS);
   });
 
   function loadTexture(url) {
@@ -196,6 +209,7 @@
   onDestroy(() => {
     clearInterval(refreshTimer);
     clearInterval(positionTimer);
+    clearInterval(trajectoryRefreshTimer);
     if (hoverHandler) {
       hoverHandler.destroy();
     }
@@ -218,12 +232,14 @@
       dataSource = source;
       lastUpdated = new Date().toLocaleString();
       allSatellites = [...activeSats, ...debrisSats];
+      clearTrajectoryCache();
       satelliteCount = allSatellites.length;
       rebuildEntities();
       if (selectedSat?.satelliteNumber) {
         const match = tracked.find((item) => item.meta?.satelliteNumber === selectedSat.satelliteNumber);
         if (match) {
           selectedSat = match.meta;
+          selectedTrajectorySatelliteNumber = match.meta?.satelliteNumber ?? null;
         }
       }
     } catch (err) {
@@ -252,13 +268,14 @@
         item.warnEntity.position = item.entity.position;
       }
       if (selectedSat && item.meta && selectedSat.name === item.meta.name) {
-        selectedSat = {
-          ...selectedSat,
-          lat: shifted.lat.toFixed(3),
-          lon: shifted.lon.toFixed(3),
-          altKm: shifted.altKm.toFixed(1)
-        };
+        selectedSat.lat = shifted.lat.toFixed(3);
+        selectedSat.lon = shifted.lon.toFixed(3);
+        selectedSat.altKm = shifted.altKm.toFixed(1);
       }
+    }
+    if (predictionTrajectories.length) {
+      clearTrajectoryCache();
+      refreshTrajectoryEntityPositions();
     }
   }
 
@@ -419,6 +436,10 @@
     predictionTrajectories = [];
   }
 
+  function clearTrajectoryCache() {
+    trajectoryPositionCache.clear();
+  }
+
   function clearConjunctionMarker() {
     if (!viewer) return;
     if (conjunctionMarker) viewer.entities.remove(conjunctionMarker);
@@ -431,13 +452,17 @@
 
   async function loadPredictionTrajectories() {
     if (!viewer || !CesiumLib) return;
-    clearPredictionTrajectories();
 
     const manualTargets = showTrajectoryLines
       ? trajectoryScope === 'all'
         ? tracked.map((item) => item.meta).filter((meta) => meta?.line1 && meta?.line2)
-        : selectedSat?.line1 && selectedSat?.line2
-          ? [selectedSat]
+        : selectedTrajectorySatelliteNumber
+          ? tracked
+              .map((item) => item.meta)
+              .filter(
+                (meta) =>
+                  meta?.satelliteNumber === selectedTrajectorySatelliteNumber && meta?.line1 && meta?.line2
+              )
           : []
       : [];
 
@@ -452,6 +477,7 @@
       );
 
     if ((!showTrajectoryLines && !targets.some((meta) => meta?.anomaly)) || !targets.length) {
+      clearPredictionTrajectories();
       return;
     }
 
@@ -460,49 +486,54 @@
     const requestId = ++predictionRequestId;
 
     try {
-      const results = await Promise.allSettled(
-        targets.map(async (meta) => {
-          const positions = buildTrajectoryPositions(meta, trajectoryHours);
-          if (!positions || requestId !== predictionRequestId) {
-            return null;
-          }
+      const targetSatelliteNumbers = new Set(targets.map((meta) => meta.satelliteNumber));
 
-          return viewer.entities.add({
+      if (viewer && predictionTrajectories.length) {
+        for (const entity of predictionTrajectories) {
+          if (!targetSatelliteNumbers.has(entity.__satelliteNumber)) {
+            viewer.entities.remove(entity);
+          }
+        }
+      }
+
+      const entities = [];
+
+      for (const meta of targets) {
+        const positions = getCachedTrajectoryPositions(meta, trajectoryHours);
+        if (!positions || requestId !== predictionRequestId) {
+          continue;
+        }
+
+        let entity = predictionTrajectories.find((candidate) => candidate.__satelliteNumber === meta.satelliteNumber);
+
+        if (!entity) {
+          const mutablePositions = positions.slice();
+          entity = viewer.entities.add({
             polyline: {
-              positions: new CesiumLib.CallbackProperty(
-                () => buildTrajectoryPositions(meta, trajectoryHours),
-                false
-              ),
-              width: meta.anomaly ? 2.6 : meta.name === selectedSat?.name ? 2.8 : 1.8,
-              material: !meta.anomaly && trajectoryScope === 'selected' && meta.name === selectedSat?.name
-                ? new CesiumLib.PolylineDashMaterialProperty({
-                    color: predictionColor(meta).withAlpha(0.88),
-                    gapColor: CesiumLib.Color.TRANSPARENT,
-                    dashLength: 18
-                  })
-                : predictionColor(meta).withAlpha(meta.name === selectedSat?.name ? 0.82 : 0.48),
+              positions: mutablePositions,
+              width: trajectoryWidth(meta),
+              material: trajectoryMaterial(meta),
               clampToGround: false
             }
           });
-        })
-      );
+          entity.__trajectoryEntity = true;
+          entity.__satelliteNumber = meta.satelliteNumber;
+          entity.__trajectoryPositions = mutablePositions;
+        } else {
+          syncTrajectoryPositions(entity, positions);
+          entity.polyline.width = trajectoryWidth(meta);
+          entity.polyline.material = trajectoryMaterial(meta);
+        }
+
+        entities.push(entity);
+      }
 
       if (requestId !== predictionRequestId) {
         return;
       }
 
-      predictionTrajectories = results
-        .filter((result) => result.status === 'fulfilled' && result.value)
-        .map((result) => {
-          result.value.__trajectoryEntity = true;
-          return result.value;
-        });
+      predictionTrajectories = entities;
       predictionTrajectory = predictionTrajectories[0] ?? null;
-
-      const rejected = results.find((result) => result.status === 'rejected');
-      if (rejected?.status === 'rejected') {
-        predictionError = rejected.reason instanceof Error ? rejected.reason.message : 'Prediction failed.';
-      }
     } catch (err) {
       if (requestId !== predictionRequestId) {
         return;
@@ -515,13 +546,76 @@
     }
   }
 
-  function buildTrajectoryPositions(meta, hours) {
-    const trackedItem = tracked.find((item) => item.meta?.name === meta.name);
+  function getTrajectoryCacheKey(meta, hours) {
+    return `${meta.satelliteNumber}:${meta.line1}:${meta.line2}:${hours}`;
+  }
+
+  function refreshTrajectoryEntityPositions() {
+    if (!viewer || !CesiumLib || !predictionTrajectories.length) {
+      return;
+    }
+
+    for (const entity of predictionTrajectories) {
+      const meta = tracked.find((item) => item.meta?.satelliteNumber === entity.__satelliteNumber)?.meta;
+      if (!meta) {
+        continue;
+      }
+
+      const positions = getCachedTrajectoryPositions(meta, trajectoryHours);
+      if (!positions) {
+        continue;
+      }
+
+      syncTrajectoryPositions(entity, positions);
+    }
+  }
+
+  function syncTrajectoryPositions(entity, nextPositions) {
+    if (!entity.__trajectoryPositions) {
+      entity.__trajectoryPositions = nextPositions.slice();
+      entity.polyline.positions = entity.__trajectoryPositions;
+      return;
+    }
+
+    entity.__trajectoryPositions.length = nextPositions.length;
+    for (let i = 0; i < nextPositions.length; i += 1) {
+      entity.__trajectoryPositions[i] = nextPositions[i];
+    }
+  }
+
+  function trajectoryWidth(meta) {
+    return meta.anomaly ? 2.6 : meta.satelliteNumber === selectedTrajectorySatelliteNumber ? 2.8 : 1.8;
+  }
+
+  function trajectoryMaterial(meta) {
+    return !meta.anomaly &&
+      trajectoryScope === 'selected' &&
+      meta.satelliteNumber === selectedTrajectorySatelliteNumber
+      ? new CesiumLib.PolylineDashMaterialProperty({
+          color: predictionColor(meta).withAlpha(0.88),
+          gapColor: CesiumLib.Color.TRANSPARENT,
+          dashLength: 18
+        })
+      : predictionColor(meta).withAlpha(
+          meta.satelliteNumber === selectedTrajectorySatelliteNumber ? 0.82 : 0.48
+        );
+  }
+
+  function getCachedTrajectoryPositions(meta, hours) {
+    const trackedItem = tracked.find((item) => item.meta?.satelliteNumber === meta.satelliteNumber);
     if (!trackedItem) {
       return null;
     }
 
-    const start = new Date();
+    const key = getTrajectoryCacheKey(meta, hours);
+    const cached = trajectoryPositionCache.get(key);
+    const now = Date.now();
+
+    if (cached && now - cached.generatedAt < TRAJECTORY_CACHE_TTL_MS) {
+      return cached.positions;
+    }
+
+    const start = new Date(now);
     const steps = Math.max(24, Math.min(240, hours * 6));
     const positions = [];
 
@@ -534,7 +628,16 @@
       positions.push(CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000));
     }
 
-    return positions.length ? positions : null;
+    if (!positions.length) {
+      return null;
+    }
+
+    trajectoryPositionCache.set(key, {
+      generatedAt: now,
+      positions
+    });
+
+    return positions;
   }
 
   function updateConjunctionMarker() {
@@ -635,9 +738,7 @@
     showTrajectoryLines;
     trajectoryHours;
     trajectoryScope;
-    selectedSat?.name;
-    selectedSat?.line1;
-    selectedSat?.line2;
+    selectedTrajectorySatelliteNumber;
     tracked.length;
     void loadPredictionTrajectories();
   }

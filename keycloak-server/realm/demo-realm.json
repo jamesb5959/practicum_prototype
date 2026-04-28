@@ -1,8 +1,8 @@
 {
   "realm": "demo",
-  "displayName": "LEO Prototype",
+  "displayName": "Real-Time Conjunction Analyzer",
   "enabled": true,
-  "registrationAllowed": true,
+  "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,

@@ -56,8 +56,30 @@ body {
 }
 
 .pf-v5-c-login__main-header {
-  padding: 32px 32px 8px;
-  text-align: center;
+  position: relative;
+  padding: 32px 156px 8px 40px;
+  text-align: left;
+}
+
+.pf-v5-c-login__main-header::before,
+.pf-v5-c-login__main-header::after {
+  content: '';
+  position: absolute;
+  top: 24px;
+  width: 56px;
+  height: 56px;
+  filter: drop-shadow(0 6px 12px rgba(16, 22, 20, 0.24));
+}
+
+.pf-v5-c-login__main-header::before {
+  right: 90px;
+  width: 76px;
+  background: url('../img/UTEP_Classic_Logo.svg') center/contain no-repeat;
+}
+
+.pf-v5-c-login__main-header::after {
+  right: 24px;
+  background: url('../img/space-force.png') center/contain no-repeat;
 }
 
 #kc-page-title {
@@ -66,7 +88,8 @@ body {
   font-size: 28px;
   font-weight: 600;
   letter-spacing: 0.4px;
-  text-align: center;
+  text-align: left;
+  max-width: 300px;
 }
 
 .pf-v5-c-login__main-header-desc,
@@ -159,6 +182,12 @@ input[type="password"]:focus {
   color: #9da9a0;
 }
 
+#kc-registration,
+#kc-registration-container,
+a#signup {
+  display: none !important;
+}
+
 a {
   color: #7fbbb3;
   text-decoration: none !important;
@@ -228,5 +257,108 @@ input[type="button"] {
   }
   to {
     background-position: 3% 2%, 96% 3%, 0% 0%;
+  }
+}
+
+@media (max-width: 640px) {
+  .pf-v5-c-login__main-header::before,
+  .pf-v5-c-login__main-header::after {
+    top: 18px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .pf-v5-c-login__main-header::before {
+    right: 68px;
+    width: 58px;
+  }
+
+  .pf-v5-c-login__main-header::after {
+    right: 18px;
+  }
+
+  .pf-v5-c-login__main-header {
+    padding: 32px 126px 8px 24px;
+  }
+
+  #kc-page-title {
+    max-width: 220px;
+    font-size: 24px;
+  }
+}
+
+@media (min-width: 5000px), (min-height: 3000px) {
+  .pf-v5-c-login {
+    padding: 64px;
+  }
+
+  .card-pf,
+  #kc-content-wrapper,
+  .pf-v5-c-login__main {
+    width: min(760px, 90vw);
+    border-radius: 36px;
+    box-shadow: 0 36px 72px rgba(16, 22, 20, 0.42);
+  }
+
+  .pf-v5-c-login__main-header {
+    padding: 52px 248px 16px 60px;
+  }
+
+  .pf-v5-c-login__main-header::before,
+  .pf-v5-c-login__main-header::after {
+    top: 40px;
+    height: 88px;
+  }
+
+  .pf-v5-c-login__main-header::before {
+    right: 132px;
+    width: 112px;
+  }
+
+  .pf-v5-c-login__main-header::after {
+    right: 40px;
+    width: 88px;
+  }
+
+  #kc-page-title {
+    max-width: 520px;
+    font-size: 44px;
+    letter-spacing: 0.7px;
+  }
+
+  .pf-v5-c-login__main-header-desc,
+  #kc-content-wrapper p,
+  .pf-v5-c-form__label-text {
+    font-size: 20px;
+  }
+
+  .pf-v5-c-login__main-body {
+    padding: 0 52px 52px;
+  }
+
+  #kc-form-login {
+    gap: 22px;
+  }
+
+  .pf-v5-c-form-control,
+  input[type="text"],
+  input[type="password"] {
+    min-height: 68px;
+    font-size: 22px;
+    border-radius: 18px;
+    padding: 16px 18px;
+  }
+
+  .pf-v5-c-button.pf-m-primary,
+  .pf-v5-c-button.pf-m-secondary,
+  #kc-login,
+  a#reset-login,
+  a#signup,
+  a#logout,
+  a#backToLogin,
+  a.pf-v5-c-button {
+    min-height: 68px;
+    font-size: 22px;
+    padding: 0 24px;
   }
 }

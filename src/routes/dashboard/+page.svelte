@@ -414,7 +414,7 @@
   }
 
   .utep-logo {
-    height: 48px;
+    height: 52px;
     width: auto;
   }
 
@@ -806,7 +806,7 @@
     }
 
     .utep-logo {
-      height: 68px;
+      height: 74px;
     }
 
     .space-force-logo {
