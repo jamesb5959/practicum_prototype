@@ -1,9 +1,21 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
+<<<<<<< HEAD
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { isAuthenticated, logout } from '$lib/auth';
   import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
+=======
+  import { browser } from '$app/environment';
+  import { activeClassification } from '$lib/classification';
+  import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
+  import {
+    activeConjunctions,
+    initCollisionConfig,
+    refreshConjunctions
+  } from '$lib/conjunction';
+  import { findConjunctionForSatellite } from '$lib/collisionUtils';
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   import 'cesium/Build/Cesium/Widgets/widgets.css';
 
   let viewer;
@@ -12,14 +24,36 @@
   let error = '';
   let lastUpdated = '';
   let satelliteCount = 0;
+<<<<<<< HEAD
   let dataSource = 'NASA';
   let refreshTimer;
   let positionTimer;
+=======
+  let dataSource = 'WARPCORE TLE';
+  let refreshTimer;
+  let positionTimer;
+  let predictionTrajectory;
+  let predictionTrajectories = [];
+  let predictionLoading = false;
+  let predictionError = '';
+  let predictionRequestId = 0;
+  let conjunctionMarker = null;
+  let conjunctionLeftLabel = null;
+  let conjunctionRightLabel = null;
+  let hoverTooltip = null;
+  let hoverX = 0;
+  let hoverY = 0;
+  let hoverHandler;
+  let trajectoryRefreshTimer;
+  const TRAJECTORY_CACHE_TTL_MS = 60 * 1000;
+  const trajectoryPositionCache = new Map();
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
 
   let allSatellites = [];
   let tracked = [];
   let displayCount = 10;
   let renderedSatelliteCount = 0;
+<<<<<<< HEAD
   let trajectoryHours = 24;
   let selectedSat = null;
   let infoTab = 'telemetry';
@@ -27,12 +61,18 @@
   let anomalyChatInput = '';
   let anomalyChatMessages = [];
   let anomalyChatSat = '';
+=======
+  let trajectoryHours = 12;
+  let selectedSat = null;
+  let infoTab = 'telemetry';
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   let filtersOpen = false;
   let filterLeo = true;
   let filterMeo = false;
   let filterGeo = false;
   let filterDebris = true;
   let showTrajectoryLines = false;
+<<<<<<< HEAD
   let filterUnclassified = true;
   let filterCui = false;
   let filterClassified = false;
@@ -41,49 +81,87 @@
   let sensitivePasswordError = '';
   let pendingSensitiveFilter = '';
   const SENSITIVE_FILTER_PASSWORD = 'admin';
+=======
+  let trajectoryScope = 'selected';
+  let overlayMinimized = false;
+  let infoMinimized = false;
+  let displayMinimized = false;
+  let selectedTrajectorySatelliteNumber = null;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   const LEO_MAX_KM = 2000;
   const MEO_MAX_KM = 35786;
   const MAX_PROTOTYPE_SATELLITES = 2000;
   const SAT_ICON_BLUE = svgData(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+<<<<<<< HEAD
       '<rect x="13" y="10" width="6" height="12" rx="2" fill="#4dd7ff"/>' +
       '<rect x="6" y="12" width="6" height="8" rx="1" fill="#7fe3ff"/>' +
       '<rect x="20" y="12" width="6" height="8" rx="1" fill="#7fe3ff"/>' +
       '<circle cx="16" cy="16" r="2" fill="#0b1020"/>' +
+=======
+      '<rect x="13" y="10" width="6" height="12" rx="2" fill="#7fbbb3"/>' +
+      '<rect x="6" y="12" width="6" height="8" rx="1" fill="#a7c080"/>' +
+      '<rect x="20" y="12" width="6" height="8" rx="1" fill="#a7c080"/>' +
+      '<circle cx="16" cy="16" r="2" fill="#1e2326"/>' +
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     '</svg>'
   );
   const SAT_ICON_RED = svgData(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+<<<<<<< HEAD
       '<rect x="13" y="10" width="6" height="12" rx="2" fill="#ff5a6b"/>' +
       '<rect x="6" y="12" width="6" height="8" rx="1" fill="#ff8797"/>' +
       '<rect x="20" y="12" width="6" height="8" rx="1" fill="#ff8797"/>' +
       '<circle cx="16" cy="16" r="2" fill="#0b1020"/>' +
+=======
+      '<rect x="13" y="10" width="6" height="12" rx="2" fill="#e69875"/>' +
+      '<rect x="6" y="12" width="6" height="8" rx="1" fill="#d6996b"/>' +
+      '<rect x="20" y="12" width="6" height="8" rx="1" fill="#d6996b"/>' +
+      '<circle cx="16" cy="16" r="2" fill="#1e2326"/>' +
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     '</svg>'
   );
   const SAT_ICON_DEBRIS = svgData(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+<<<<<<< HEAD
       '<path d="M16 4 L24 7 L28 14 L25 23 L17 28 L9 25 L4 17 L7 8 Z" fill="#facc15"/>' +
       '<path d="M11 12 L21 20 M20 11 L12 21" stroke="#0b1020" stroke-width="1.8" stroke-linecap="round"/>' +
       '<circle cx="6.5" cy="6.5" r="1.5" fill="#fde047"/>' +
       '<circle cx="26" cy="9" r="1.2" fill="#fde047"/>' +
       '<circle cx="24.5" cy="25" r="1.3" fill="#fde047"/>' +
+=======
+      '<path d="M16 4 L24 7 L28 14 L25 23 L17 28 L9 25 L4 17 L7 8 Z" fill="#dbbc7f"/>' +
+      '<path d="M11 12 L21 20 M20 11 L12 21" stroke="#1e2326" stroke-width="1.8" stroke-linecap="round"/>' +
+      '<circle cx="6.5" cy="6.5" r="1.5" fill="#e6c384"/>' +
+      '<circle cx="26" cy="9" r="1.2" fill="#e6c384"/>' +
+      '<circle cx="24.5" cy="25" r="1.3" fill="#e6c384"/>' +
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     '</svg>'
   );
   const WARN_ICON = svgData(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+<<<<<<< HEAD
       '<path d="M16 4 L29 28 H3 Z" fill="#ffb84d"/>' +
+=======
+      '<path d="M16 4 L29 28 H3 Z" fill="#dbbc7f"/>' +
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       '<rect x="15" y="11" width="2" height="9" fill="#1f1400"/>' +
       '<rect x="15" y="22.5" width="2" height="2" fill="#1f1400"/>' +
     '</svg>'
   );
 
   onMount(async () => {
+<<<<<<< HEAD
     if (!isAuthenticated()) {
       goto('/login');
       return;
     }
 
     if (!browser) return;
+=======
+    if (!browser) return;
+    initCollisionConfig();
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
 
     try {
       CesiumLib = await import('cesium');
@@ -130,6 +208,7 @@
     viewer.selectedEntityChanged.addEventListener((entity) => {
       if (!entity) {
         selectedSat = null;
+<<<<<<< HEAD
         infoTab = 'telemetry';
         return;
       }
@@ -138,10 +217,63 @@
       infoTab = 'telemetry';
     });
 
+=======
+        selectedTrajectorySatelliteNumber = null;
+        infoTab = 'telemetry';
+        clearPredictionTrajectories();
+        return;
+      }
+      if (entity.__trajectoryEntity || entity.__conjunctionMarkerEntity) {
+        return;
+      }
+      const match = tracked.find((item) => item.entity === entity);
+      if (!match) {
+        return;
+      }
+      selectedSat = match.meta;
+      selectedTrajectorySatelliteNumber = match.meta?.satelliteNumber ?? null;
+      infoTab = 'telemetry';
+    });
+
+    hoverHandler = new CesiumLib.ScreenSpaceEventHandler(viewer.scene.canvas);
+    hoverHandler.setInputAction((movement) => {
+      if (!viewer || !CesiumLib) return;
+      const picked = viewer.scene.pick(movement.endPosition);
+      const entity = picked?.id;
+      if (!entity || entity.__trajectoryEntity || entity.__conjunctionMarkerEntity) {
+        hoverTooltip = null;
+        return;
+      }
+      const match = tracked.find((item) => item.entity === entity);
+      if (!match?.meta) {
+        hoverTooltip = null;
+        return;
+      }
+      hoverX = movement.endPosition.x;
+      hoverY = movement.endPosition.y;
+      hoverTooltip = {
+        name: match.meta.name,
+        status: match.meta.anomaly ? 'ANOMALY' : match.meta.objectType,
+        orbitBand: match.meta.orbitBand,
+        altKm: match.meta.altKm
+      };
+    }, CesiumLib.ScreenSpaceEventType.MOUSE_MOVE);
+
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     await loadData();
 
     refreshTimer = setInterval(loadData, 10 * 60 * 1000);
     positionTimer = setInterval(updatePositions, 5000);
+<<<<<<< HEAD
+=======
+    trajectoryRefreshTimer = setInterval(() => {
+      if (!viewer || !CesiumLib || (!showTrajectoryLines && !tracked.some((item) => item.meta?.anomaly))) {
+        return;
+      }
+      clearTrajectoryCache();
+      void loadPredictionTrajectories();
+    }, TRAJECTORY_CACHE_TTL_MS);
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   });
 
   function loadTexture(url) {
@@ -160,6 +292,15 @@
   onDestroy(() => {
     clearInterval(refreshTimer);
     clearInterval(positionTimer);
+<<<<<<< HEAD
+=======
+    clearInterval(trajectoryRefreshTimer);
+    if (hoverHandler) {
+      hoverHandler.destroy();
+    }
+    clearPredictionTrajectories();
+    clearConjunctionMarker();
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     if (viewer) {
       viewer.destroy();
     }
@@ -173,11 +314,28 @@
       const { activeText, debrisText, source } = await fetchActiveAndDebrisTle();
       const activeSats = parseTle(activeText).map((sat) => ({ ...sat, isDebris: false }));
       const debrisSats = parseTle(debrisText).map((sat) => ({ ...sat, isDebris: true }));
+<<<<<<< HEAD
       dataSource = source;
       lastUpdated = new Date().toLocaleString();
       allSatellites = [...activeSats, ...debrisSats];
       satelliteCount = allSatellites.length;
       rebuildEntities();
+=======
+      await refreshConjunctions(activeSats);
+      dataSource = source;
+      lastUpdated = new Date().toLocaleString();
+      allSatellites = [...activeSats, ...debrisSats];
+      clearTrajectoryCache();
+      satelliteCount = allSatellites.length;
+      rebuildEntities();
+      if (selectedSat?.satelliteNumber) {
+        const match = tracked.find((item) => item.meta?.satelliteNumber === selectedSat.satelliteNumber);
+        if (match) {
+          selectedSat = match.meta;
+          selectedTrajectorySatelliteNumber = match.meta?.satelliteNumber ?? null;
+        }
+      }
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load data.';
       if (!lastUpdated) {
@@ -203,6 +361,7 @@
       if (item.warnEntity) {
         item.warnEntity.position = item.entity.position;
       }
+<<<<<<< HEAD
       if (item.trajectory && showTrajectoryLines) {
         item.trajectory.polyline.positions = buildTrajectoryWithOffset(
           item.satrec,
@@ -236,6 +395,18 @@
       );
     }
     return positions;
+=======
+      if (selectedSat && item.meta && selectedSat.name === item.meta.name) {
+        selectedSat.lat = shifted.lat.toFixed(3);
+        selectedSat.lon = shifted.lon.toFixed(3);
+        selectedSat.altKm = shifted.altKm.toFixed(1);
+      }
+    }
+    if (predictionTrajectories.length) {
+      clearTrajectoryCache();
+      refreshTrajectoryEntityPositions();
+    }
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   function clampLat(lat) {
@@ -257,6 +428,7 @@
     };
   }
 
+<<<<<<< HEAD
   function buildTrajectoryWithOffset(satrec, hours, latOffset, lonOffset) {
     const positions = [];
     const now = Date.now();
@@ -344,6 +516,8 @@
     anomalyChatInput = '';
   }
 
+=======
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   function getOrbitBand(altKm) {
     if (altKm <= LEO_MAX_KM) return 'LEO';
     if (altKm <= MEO_MAX_KM) return 'MEO';
@@ -357,6 +531,11 @@
 
   function rebuildEntities() {
     if (!viewer || !CesiumLib) return;
+<<<<<<< HEAD
+=======
+    clearPredictionTrajectories();
+    clearConjunctionMarker();
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     viewer.entities.removeAll();
     tracked = [];
     const now = new Date();
@@ -369,12 +548,16 @@
       .filter(({ sat, geo }) => {
         if (sat.isDebris) return filterDebris;
         if (!isOrbitEnabled(geo.altKm)) return false;
+<<<<<<< HEAD
         // Current feed has no security classification metadata.
         if (!filterUnclassified) return false;
+=======
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         return true;
       });
     const satelliteVisible = visible.filter(({ sat }) => !sat.isDebris);
     const debrisVisible = visible.filter(({ sat }) => sat.isDebris);
+<<<<<<< HEAD
     satelliteCount = satelliteVisible.length;
     renderedSatelliteCount = satelliteVisible.length
       ? Math.min(Math.max(1, displayCount), MAX_PROTOTYPE_SATELLITES)
@@ -404,12 +587,42 @@
       const status = sat.isDebris ? 'DEBRIS' : anomaly ? 'ANOMALY' : 'NORMAL';
       const pressure = (0.0001 + (sat.name.length % 9) * 0.00003).toFixed(6);
       const uptime = `${(sat.name.length % 28) + 1} days`;
+=======
+    const actualVisible = [...satelliteVisible, ...debrisVisible];
+    const anomalySatelliteNumbers = new Set(
+      $activeConjunctions.flatMap((event) => [event.primarySatelliteNumber, event.secondarySatelliteNumber])
+    );
+    satelliteCount = actualVisible.length;
+    renderedSatelliteCount = actualVisible.length
+      ? Math.min(Math.max(1, displayCount), Math.min(actualVisible.length, MAX_PROTOTYPE_SATELLITES))
+      : 0;
+    const selectedBase = actualVisible.slice(0, renderedSatelliteCount);
+    const forcedAnomalies = actualVisible.filter(({ sat }) =>
+      anomalySatelliteNumbers.has(sat.fields.satelliteNumber)
+    );
+    const selected = [...selectedBase, ...forcedAnomalies].filter(
+      ({ sat }, index, items) =>
+        items.findIndex((candidate) => candidate.sat.fields.satelliteNumber === sat.fields.satelliteNumber) === index
+    );
+    for (let i = 0; i < selected.length; i += 1) {
+      const { sat, geo } = selected[i];
+      const latOffset = 0;
+      const lonOffset = 0;
+      const shifted = applyGeoOffset(geo, latOffset, lonOffset);
+      const conjunction = findConjunctionForSatellite($activeConjunctions, sat.fields.satelliteNumber);
+      const anomaly = Boolean(conjunction);
+      const status = sat.isDebris ? 'DEBRIS' : 'TRACKED';
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       const position = CesiumLib.Cartesian3.fromDegrees(
         shifted.lon,
         shifted.lat,
         shifted.altKm * 1000
       );
+<<<<<<< HEAD
       const displayName = sat.isDebris || !selected[i].isClone ? sat.name : `${sat.name} #${selected[i].cloneId}`;
+=======
+      const displayName = sat.name;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       const entity = viewer.entities.add({
         name: displayName,
         position,
@@ -434,6 +647,7 @@
             }
           })
         : null;
+<<<<<<< HEAD
       const trajectory = showTrajectoryLines
         ? viewer.entities.add({
             polyline: {
@@ -449,30 +663,60 @@
             }
           })
         : null;
+=======
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       tracked.push({
         satrec: sat.satrec,
         latOffset,
         lonOffset,
         entity,
+<<<<<<< HEAD
         trajectory,
+=======
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         warnEntity,
         meta: {
           name: displayName,
           status,
+<<<<<<< HEAD
           pressure,
           uptime,
+=======
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
           anomaly,
           objectType: sat.isDebris ? 'Debris' : 'Satellite',
           orbitBand: getOrbitBand(geo.altKm),
           lat: shifted.lat.toFixed(3),
           lon: shifted.lon.toFixed(3),
+<<<<<<< HEAD
           altKm: shifted.altKm.toFixed(1)
+=======
+          altKm: shifted.altKm.toFixed(1),
+          classification: sat.fields.classification,
+          satelliteNumber: sat.fields.satelliteNumber,
+          internationalDesignator: sat.fields.internationalDesignator,
+          epochIso: sat.fields.epochIso,
+          inclination: sat.fields.inclination.toFixed(4),
+          raan: sat.fields.raan.toFixed(4),
+          eccentricity: sat.fields.eccentricity.toFixed(7),
+          argumentOfPerigee: sat.fields.argumentOfPerigee.toFixed(4),
+          meanAnomaly: sat.fields.meanAnomaly.toFixed(4),
+          meanMotion: sat.fields.meanMotion.toFixed(8),
+          revolutionsAtEpoch: Number.isFinite(sat.fields.revolutionsAtEpoch)
+            ? String(sat.fields.revolutionsAtEpoch)
+            : 'Unknown',
+          collisionDistanceKm: conjunction ? conjunction.distanceKm.toFixed(2) : null,
+          collisionTimeIso: conjunction?.timeIso ?? null,
+          line1: sat.line1,
+          line2: sat.line2
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         }
       });
     }
     updatePositions();
   }
 
+<<<<<<< HEAD
   function handleLogout() {
     logout();
     goto('/login');
@@ -546,15 +790,323 @@
           ]
         : [];
     }
+=======
+  function clearPredictionTrajectories() {
+    predictionError = '';
+    predictionLoading = false;
+    if (viewer && predictionTrajectory) {
+      viewer.entities.remove(predictionTrajectory);
+    }
+    if (viewer && predictionTrajectories.length) {
+      for (const entity of predictionTrajectories) {
+        viewer.entities.remove(entity);
+      }
+    }
+    predictionTrajectory = null;
+    predictionTrajectories = [];
+  }
+
+  function clearTrajectoryCache() {
+    trajectoryPositionCache.clear();
+  }
+
+  function clearConjunctionMarker() {
+    if (!viewer) return;
+    if (conjunctionMarker) viewer.entities.remove(conjunctionMarker);
+    if (conjunctionLeftLabel) viewer.entities.remove(conjunctionLeftLabel);
+    if (conjunctionRightLabel) viewer.entities.remove(conjunctionRightLabel);
+    conjunctionMarker = null;
+    conjunctionLeftLabel = null;
+    conjunctionRightLabel = null;
+  }
+
+  async function loadPredictionTrajectories() {
+    if (!viewer || !CesiumLib) return;
+
+    const manualTargets = showTrajectoryLines
+      ? trajectoryScope === 'all'
+        ? tracked.map((item) => item.meta).filter((meta) => meta?.line1 && meta?.line2)
+        : selectedTrajectorySatelliteNumber
+          ? tracked
+              .map((item) => item.meta)
+              .filter(
+                (meta) =>
+                  meta?.satelliteNumber === selectedTrajectorySatelliteNumber && meta?.line1 && meta?.line2
+              )
+          : []
+      : [];
+
+    const targets =
+      [
+        ...manualTargets,
+        ...tracked.map((item) => item.meta).filter((meta) => meta?.anomaly)
+      ].filter(
+        (meta, index, items) =>
+          meta &&
+          items.findIndex((candidate) => candidate?.satelliteNumber === meta.satelliteNumber) === index
+      );
+
+    if ((!showTrajectoryLines && !targets.some((meta) => meta?.anomaly)) || !targets.length) {
+      clearPredictionTrajectories();
+      return;
+    }
+
+    predictionLoading = true;
+    predictionError = '';
+    const requestId = ++predictionRequestId;
+
+    try {
+      const targetSatelliteNumbers = new Set(targets.map((meta) => meta.satelliteNumber));
+
+      if (viewer && predictionTrajectories.length) {
+        for (const entity of predictionTrajectories) {
+          if (!targetSatelliteNumbers.has(entity.__satelliteNumber)) {
+            viewer.entities.remove(entity);
+          }
+        }
+      }
+
+      const entities = [];
+
+      for (const meta of targets) {
+        const positions = getCachedTrajectoryPositions(meta, trajectoryHours);
+        if (!positions || requestId !== predictionRequestId) {
+          continue;
+        }
+
+        let entity = predictionTrajectories.find((candidate) => candidate.__satelliteNumber === meta.satelliteNumber);
+
+        if (!entity) {
+          const mutablePositions = positions.slice();
+          entity = viewer.entities.add({
+            polyline: {
+              positions: mutablePositions,
+              width: trajectoryWidth(meta),
+              material: trajectoryMaterial(meta),
+              clampToGround: false
+            }
+          });
+          entity.__trajectoryEntity = true;
+          entity.__satelliteNumber = meta.satelliteNumber;
+          entity.__trajectoryPositions = mutablePositions;
+        } else {
+          syncTrajectoryPositions(entity, positions);
+          entity.polyline.width = trajectoryWidth(meta);
+          entity.polyline.material = trajectoryMaterial(meta);
+        }
+
+        entities.push(entity);
+      }
+
+      if (requestId !== predictionRequestId) {
+        return;
+      }
+
+      predictionTrajectories = entities;
+      predictionTrajectory = predictionTrajectories[0] ?? null;
+    } catch (err) {
+      if (requestId !== predictionRequestId) {
+        return;
+      }
+      predictionError = err instanceof Error ? err.message : 'Prediction failed.';
+    } finally {
+      if (requestId === predictionRequestId) {
+        predictionLoading = false;
+      }
+    }
+  }
+
+  function getTrajectoryCacheKey(meta, hours) {
+    return `${meta.satelliteNumber}:${meta.line1}:${meta.line2}:${hours}`;
+  }
+
+  function refreshTrajectoryEntityPositions() {
+    if (!viewer || !CesiumLib || !predictionTrajectories.length) {
+      return;
+    }
+
+    for (const entity of predictionTrajectories) {
+      const meta = tracked.find((item) => item.meta?.satelliteNumber === entity.__satelliteNumber)?.meta;
+      if (!meta) {
+        continue;
+      }
+
+      const positions = getCachedTrajectoryPositions(meta, trajectoryHours);
+      if (!positions) {
+        continue;
+      }
+
+      syncTrajectoryPositions(entity, positions);
+    }
+  }
+
+  function syncTrajectoryPositions(entity, nextPositions) {
+    if (!entity.__trajectoryPositions) {
+      entity.__trajectoryPositions = nextPositions.slice();
+      entity.polyline.positions = entity.__trajectoryPositions;
+      return;
+    }
+
+    entity.__trajectoryPositions.length = nextPositions.length;
+    for (let i = 0; i < nextPositions.length; i += 1) {
+      entity.__trajectoryPositions[i] = nextPositions[i];
+    }
+  }
+
+  function trajectoryWidth(meta) {
+    return meta.anomaly ? 2.6 : meta.satelliteNumber === selectedTrajectorySatelliteNumber ? 2.8 : 1.8;
+  }
+
+  function trajectoryMaterial(meta) {
+    return !meta.anomaly &&
+      trajectoryScope === 'selected' &&
+      meta.satelliteNumber === selectedTrajectorySatelliteNumber
+      ? new CesiumLib.PolylineDashMaterialProperty({
+          color: predictionColor(meta).withAlpha(0.88),
+          gapColor: CesiumLib.Color.TRANSPARENT,
+          dashLength: 18
+        })
+      : predictionColor(meta).withAlpha(
+          meta.satelliteNumber === selectedTrajectorySatelliteNumber ? 0.82 : 0.48
+        );
+  }
+
+  function getCachedTrajectoryPositions(meta, hours) {
+    const trackedItem = tracked.find((item) => item.meta?.satelliteNumber === meta.satelliteNumber);
+    if (!trackedItem) {
+      return null;
+    }
+
+    const key = getTrajectoryCacheKey(meta, hours);
+    const cached = trajectoryPositionCache.get(key);
+    const now = Date.now();
+
+    if (cached && now - cached.generatedAt < TRAJECTORY_CACHE_TTL_MS) {
+      return cached.positions;
+    }
+
+    const start = new Date(now);
+    const steps = Math.max(24, Math.min(240, hours * 6));
+    const positions = [];
+
+    for (let step = 0; step <= steps; step += 1) {
+      const date = new Date(start.getTime() + (hours * 60 * 60 * 1000 * step) / steps);
+      const geo = propagateToGeodetic(trackedItem.satrec, date);
+      if (!geo) {
+        continue;
+      }
+      positions.push(CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000));
+    }
+
+    if (!positions.length) {
+      return null;
+    }
+
+    trajectoryPositionCache.set(key, {
+      generatedAt: now,
+      positions
+    });
+
+    return positions;
+  }
+
+  function updateConjunctionMarker() {
+    if (!viewer || !CesiumLib) return;
+    clearConjunctionMarker();
+    if (!selectedSat?.collisionTimeIso || !selectedSat?.collisionDistanceKm) {
+      return;
+    }
+
+    const event = findConjunctionForSatellite($activeConjunctions, selectedSat.satelliteNumber);
+    if (!event) {
+      return;
+    }
+
+    const geo = propagateToGeodetic(
+      tracked.find((item) => item.meta?.satelliteNumber === selectedSat.satelliteNumber)?.satrec,
+      new Date(event.timeIso)
+    );
+    if (!geo) {
+      return;
+    }
+
+    const basePosition = CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000);
+
+    conjunctionMarker = viewer.entities.add({
+      position: basePosition,
+      point: {
+        pixelSize: 10,
+        color: CesiumLib.Color.fromCssColorString('#e67e80'),
+        outlineColor: CesiumLib.Color.fromCssColorString('#f4f1de'),
+        outlineWidth: 2
+      }
+    });
+    conjunctionMarker.__conjunctionMarkerEntity = true;
+
+    conjunctionLeftLabel = viewer.entities.add({
+      position: basePosition,
+      label: {
+        text: `${event.distanceKm.toFixed(2)} km`,
+        font: '12px sans-serif',
+        fillColor: CesiumLib.Color.fromCssColorString('#f4f1de'),
+        showBackground: true,
+        backgroundColor: CesiumLib.Color.fromBytes(30, 35, 38, 220),
+        pixelOffset: new CesiumLib.Cartesian2(-84, 0),
+        horizontalOrigin: CesiumLib.HorizontalOrigin.RIGHT,
+        verticalOrigin: CesiumLib.VerticalOrigin.CENTER
+      }
+    });
+    conjunctionLeftLabel.__conjunctionMarkerEntity = true;
+
+    conjunctionRightLabel = viewer.entities.add({
+      position: basePosition,
+      label: {
+        text: new Date(event.timeIso).toLocaleString(),
+        font: '12px sans-serif',
+        fillColor: CesiumLib.Color.fromCssColorString('#f4f1de'),
+        showBackground: true,
+        backgroundColor: CesiumLib.Color.fromBytes(30, 35, 38, 220),
+        pixelOffset: new CesiumLib.Cartesian2(84, 0),
+        horizontalOrigin: CesiumLib.HorizontalOrigin.LEFT,
+        verticalOrigin: CesiumLib.VerticalOrigin.CENTER
+      }
+    });
+    conjunctionRightLabel.__conjunctionMarkerEntity = true;
+  }
+
+  function predictionColor(meta = selectedSat) {
+    if (!meta || !CesiumLib) {
+      return CesiumLib.Color.fromCssColorString('#a7c080');
+    }
+    if (meta.objectType === 'Debris') {
+      return CesiumLib.Color.fromCssColorString('#c5a46d');
+    }
+    if (meta.anomaly) {
+      return CesiumLib.Color.fromCssColorString('#c85d6c');
+    }
+    return CesiumLib.Color.fromCssColorString('#a7c080');
+  }
+
+  function handleLogout() {
+    window.location.href = '/auth/logout';
+  }
+
+  function handleDashboard() {
+    window.location.href = '/dashboard';
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   $: if (viewer && CesiumLib) {
     displayCount;
+<<<<<<< HEAD
     trajectoryHours;
+=======
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     filterLeo;
     filterMeo;
     filterGeo;
     filterDebris;
+<<<<<<< HEAD
     filterUnclassified;
     filterCui;
     filterClassified;
@@ -568,10 +1120,38 @@
 </svelte:head>
 
 <div class="space_view" class:sensitive-blur={sensitivePromptOpen}>
+=======
+    rebuildEntities();
+  }
+
+  $: if (viewer && CesiumLib) {
+    showTrajectoryLines;
+    trajectoryHours;
+    trajectoryScope;
+    selectedTrajectorySatelliteNumber;
+    tracked.length;
+    void loadPredictionTrajectories();
+  }
+
+  $: if (viewer && CesiumLib) {
+    selectedSat?.satelliteNumber;
+    selectedSat?.collisionTimeIso;
+    $activeConjunctions;
+    updateConjunctionMarker();
+  }
+</script>
+
+<svelte:head>
+  <title>Real-Time Conjunction Analyzer | Space View</title>
+</svelte:head>
+
+<div class="space-view">
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   <div id="cesiumContainer"></div>
 
   <div class="overlay glass fade-in">
     <div class="overlay-header">
+<<<<<<< HEAD
       <h2>LEO Prototype - Space View</h2>
       <div class="actions">
         <button class="btn secondary" on:click={loadData} disabled={loading}>
@@ -582,6 +1162,27 @@
       </div>
     </div>
 
+=======
+      <div class="overlay-header-main">
+        <div class="overlay-title">
+          <span class="eyebrow">Orbital Operations</span>
+          <h2>Real-Time Conjunction Analyzer | Space View</h2>
+        </div>
+        <button class="panel-toggle btn secondary" on:click={() => (overlayMinimized = !overlayMinimized)}>
+          {overlayMinimized ? 'Expand' : 'Minimize'}
+        </button>
+      </div>
+      <div class="actions">
+        <button class="btn" on:click={loadData} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Refresh Data'}
+        </button>
+        <button class="btn secondary" on:click={handleDashboard}>Dashboard</button>
+        <button class="btn danger" on:click={handleLogout}>Logout</button>
+      </div>
+    </div>
+
+    {#if !overlayMinimized}
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     <div class="legend">
       <span class="legend-item"><span class="dot nominal"></span> Normal</span>
       <span class="legend-item"><span class="dot anomaly"></span> Anomaly</span>
@@ -589,6 +1190,7 @@
     </div>
 
     <div class="stats">
+<<<<<<< HEAD
       <div>
         <span class="label">Satellites loaded</span>
         <strong>{satelliteCount}</strong>
@@ -598,6 +1200,25 @@
         <strong>{dataSource}</strong>
       </div>
       <div>
+=======
+      <div class="stat-row">
+        <span class="label">Satellites loaded</span>
+        <strong>{satelliteCount}</strong>
+      </div>
+      <div class="stat-row">
+        <span class="label">Data source</span>
+        <strong>{dataSource}</strong>
+      </div>
+      <div class="stat-row">
+        <span class="label">Trajectory engine</span>
+        <strong>SGP4</strong>
+      </div>
+      <div class="stat-row">
+        <span class="label">Classification</span>
+        <strong>{$activeClassification}</strong>
+      </div>
+      <div class="stat-row">
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         <span class="label">Last updated</span>
         <strong>{lastUpdated || 'Loading...'}</strong>
       </div>
@@ -606,6 +1227,7 @@
     {#if error}
       <div class="error">{error}</div>
     {/if}
+<<<<<<< HEAD
   </div>
 
   <div class="controls glass fade-in">
@@ -639,6 +1261,63 @@
           bind:value={trajectoryHours}
         />
       </div>
+=======
+    {#if predictionError}
+      <div class="error">{predictionError}</div>
+    {/if}
+    {/if}
+  </div>
+
+  <div class:controls-minimized={showTrajectoryLines && displayMinimized} class="controls glass fade-in">
+    <div class="controls-header">
+      <div class="section-heading">Display</div>
+      {#if showTrajectoryLines}
+        <button class="panel-toggle btn secondary" on:click={() => (displayMinimized = !displayMinimized)}>
+          {displayMinimized ? 'Expand' : 'Minimize'}
+        </button>
+      {/if}
+    </div>
+
+    {#if !showTrajectoryLines || !displayMinimized}
+      <div class="panel-section">
+        <div class="control">
+          <div class="control-header">
+            <span>Satellites to view</span>
+            <strong>{renderedSatelliteCount}</strong>
+          </div>
+          <input
+            class="range"
+            type="range"
+            min="1"
+            max={Math.max(1, satelliteCount)}
+            step="1"
+            bind:value={displayCount}
+          />
+        </div>
+      </div>
+
+      {#if showTrajectoryLines}
+        <div class="panel-section">
+          <div class="control">
+            <div class="control-header">
+              <span>Trajectory hours</span>
+              <strong>{trajectoryHours}h</strong>
+            </div>
+            <input
+              class="range"
+              type="range"
+              min="1"
+              max="240"
+              step="1"
+              bind:value={trajectoryHours}
+            />
+            {#if predictionLoading}
+              <div class="label">Drawing propagated trajectory...</div>
+            {/if}
+          </div>
+        </div>
+      {/if}
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     {/if}
   </div>
 
@@ -655,6 +1334,7 @@
         <label><input type="checkbox" bind:checked={filterDebris} /> Debris</label>
       </div>
       <div class="filter-group">
+<<<<<<< HEAD
         <label><input type="checkbox" bind:checked={filterUnclassified} /> UNCLASSIFIED</label>
         <label><input type="checkbox" checked={filterCui} on:change={handleCuiChange} /> CUI</label>
         <label>
@@ -662,13 +1342,44 @@
           CLASSIFIED
         </label>
         <label><input type="checkbox" bind:checked={showTrajectoryLines} /> Trajectory lines</label>
+=======
+        <label><input type="checkbox" bind:checked={showTrajectoryLines} /> Trajectory lines</label>
+        {#if showTrajectoryLines}
+          <label class="trajectory-scope">
+            <span>Trajectory scope</span>
+            <select bind:value={trajectoryScope}>
+              <option value="selected">Selected satellite</option>
+              <option value="all">All visible satellites</option>
+            </select>
+          </label>
+        {/if}
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       </div>
     </div>
   </div>
 
   {#if selectedSat}
+<<<<<<< HEAD
     <div class="info glass fade-in">
       <h3>{selectedSat.name}</h3>
+=======
+    <div class:info-minimized={infoMinimized} class="info glass fade-in">
+      <div class="info-heading">
+        <div>
+          <span class="eyebrow">Selected Object</span>
+          <h3>{selectedSat.name}</h3>
+        </div>
+        <div class="info-heading-actions">
+          <span class:selected-anomaly={selectedSat.anomaly} class="operator-badge">
+            {selectedSat.anomaly ? 'ANOMALY' : selectedSat.objectType.toUpperCase()}
+          </span>
+          <button class="panel-toggle btn secondary" on:click={() => (infoMinimized = !infoMinimized)}>
+            {infoMinimized ? 'Expand' : 'Minimize'}
+          </button>
+        </div>
+      </div>
+      {#if !infoMinimized}
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       <div class="tabs">
         <button class:active={infoTab === 'telemetry'} on:click={() => (infoTab = 'telemetry')}>
           Telemetry
@@ -681,11 +1392,21 @@
         <div class="info-grid">
           <div>
             <span class="label">Status</span>
+<<<<<<< HEAD
             <strong class:warn={selectedSat.anomaly}>{selectedSat.status}</strong>
           </div>
           <div><span class="label">Object</span><strong>{selectedSat.objectType}</strong></div>
           <div><span class="label">Pressure</span><strong>{selectedSat.pressure}</strong></div>
           <div><span class="label">Uptime</span><strong>{selectedSat.uptime}</strong></div>
+=======
+            <strong class:warn={selectedSat.anomaly}>{selectedSat.anomaly ? 'ANOMALY' : selectedSat.status}</strong>
+          </div>
+          <div><span class="label">Object</span><strong>{selectedSat.objectType}</strong></div>
+          <div><span class="label">Satellite #</span><strong>{selectedSat.satelliteNumber}</strong></div>
+          <div><span class="label">TLE class</span><strong>{selectedSat.classification}</strong></div>
+          <div><span class="label">Designator</span><strong>{selectedSat.internationalDesignator || '—'}</strong></div>
+          <div><span class="label">Epoch</span><strong>{selectedSat.epochIso}</strong></div>
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         </div>
       {/if}
 
@@ -695,20 +1416,43 @@
           <div><span class="label">Latitude</span><strong>{selectedSat.lat || '—'}</strong></div>
           <div><span class="label">Longitude</span><strong>{selectedSat.lon || '—'}</strong></div>
           <div><span class="label">Altitude</span><strong>{selectedSat.altKm || '—'} km</strong></div>
+<<<<<<< HEAD
+=======
+          <div><span class="label">Inclination</span><strong>{selectedSat.inclination}°</strong></div>
+          <div><span class="label">RAAN</span><strong>{selectedSat.raan}°</strong></div>
+          <div><span class="label">Eccentricity</span><strong>{selectedSat.eccentricity}</strong></div>
+          <div><span class="label">Arg. perigee</span><strong>{selectedSat.argumentOfPerigee}°</strong></div>
+          <div><span class="label">Mean anomaly</span><strong>{selectedSat.meanAnomaly}°</strong></div>
+          <div><span class="label">Mean motion</span><strong>{selectedSat.meanMotion}</strong></div>
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         </div>
       {/if}
 
       {#if infoTab === 'risk'}
         <div class="info-grid">
+<<<<<<< HEAD
           <div><span class="label">Risk level</span><strong>{selectedSat.anomaly ? 'Elevated' : 'Low'}</strong></div>
           <div><span class="label">Proximity risk</span><strong>{selectedSat.anomaly ? 'Monitor' : 'Nominal'}</strong></div>
           <div><span class="label">Recommended action</span><strong>{selectedSat.anomaly ? 'Plan correction burn' : 'None'}</strong></div>
         </div>
       {/if}
+=======
+          <div><span class="label">Catalog type</span><strong>{selectedSat.objectType}</strong></div>
+          <div><span class="label">App classification</span><strong>{$activeClassification}</strong></div>
+          <div><span class="label">Trajectory horizon</span><strong>{trajectoryHours} hours</strong></div>
+          <div><span class="label">Engine status</span><strong>{predictionLoading ? 'Running' : 'Ready'}</strong></div>
+          <div><span class="label">Epoch revolutions</span><strong>{selectedSat.revolutionsAtEpoch}</strong></div>
+          <div><span class="label">Closest approach</span><strong>{selectedSat.collisionDistanceKm ? `${selectedSat.collisionDistanceKm} km` : 'None'}</strong></div>
+          <div><span class="label">Expected time</span><strong>{selectedSat.collisionTimeIso ? new Date(selectedSat.collisionTimeIso).toLocaleString() : 'None'}</strong></div>
+        </div>
+      {/if}
+      {/if}
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
 
     </div>
   {/if}
 
+<<<<<<< HEAD
   {#if selectedAnomalyAnalysis}
     <div class="anomaly-llm glass fade-in">
       <h3>Anomaly Assistant</h3>
@@ -760,11 +1504,22 @@
           <button type="submit" class="btn secondary">Continue</button>
         </div>
       </form>
+=======
+  {#if hoverTooltip}
+    <div
+      class="hover-tooltip glass"
+      style={`left:${hoverX + 14}px; top:${hoverY + 14}px;`}
+    >
+      <strong>{hoverTooltip.name}</strong>
+      <span>{hoverTooltip.status}</span>
+      <span>{hoverTooltip.orbitBand} • {hoverTooltip.altKm} km</span>
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     </div>
   {/if}
 </div>
 
 <style>
+<<<<<<< HEAD
   .space_view {
     position: relative;
     width: 100vw;
@@ -776,6 +1531,15 @@
     filter: blur(4px);
   }
 
+=======
+  .space-view {
+    position: relative;
+    width: 100vw;
+    height: calc(100vh - var(--classification-bar-height));
+    overflow: hidden;
+  }
+
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   #cesiumContainer {
     position: absolute;
     inset: 0;
@@ -785,6 +1549,7 @@
     position: absolute;
     top: 24px;
     left: 24px;
+<<<<<<< HEAD
     padding: 20px;
     border-radius: 16px;
     width: min(420px, 90vw);
@@ -797,10 +1562,24 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+=======
+    padding: 16px 18px;
+    border-radius: 16px;
+    width: min(380px, 86vw);
+    display: grid;
+    gap: 12px;
+    animation: panel-slide 240ms ease;
+  }
+
+  .overlay-header {
+    display: grid;
+    gap: 10px;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .overlay-header h2 {
     margin: 0;
+<<<<<<< HEAD
     font-size: 18px;
   }
 
@@ -808,6 +1587,33 @@
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+=======
+    font-size: 16px;
+    letter-spacing: 0.02em;
+  }
+
+  .overlay-title {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .overlay-header-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .panel-toggle {
+    white-space: nowrap;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .stats {
@@ -815,18 +1621,39 @@
     gap: 12px;
   }
 
+<<<<<<< HEAD
   .stats div {
     display: flex;
     justify-content: space-between;
     font-size: 14px;
+=======
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(157, 169, 160, 0.12);
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .label {
     color: var(--muted);
   }
 
+<<<<<<< HEAD
   .error {
     color: #ff8797;
+=======
+  .eyebrow {
+    color: var(--accent);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .error {
+    color: #e69875;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     font-size: 13px;
   }
 
@@ -851,6 +1678,7 @@
   }
 
   .dot.nominal {
+<<<<<<< HEAD
     background: #4dd7ff;
   }
 
@@ -860,17 +1688,51 @@
 
   .dot.debris {
     background: #facc15;
+=======
+    background: #a7c080;
+  }
+
+  .dot.anomaly {
+    background: #e67e80;
+  }
+
+  .dot.debris {
+    background: #c5a46d;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .controls {
     position: absolute;
     bottom: 24px;
     left: 24px;
+<<<<<<< HEAD
     padding: 16px;
     border-radius: 16px;
     width: min(320px, 88vw);
     display: grid;
     gap: 16px;
+=======
+    padding: 12px;
+    border-radius: 16px;
+    width: min(292px, 82vw);
+    display: grid;
+    gap: 12px;
+    animation: panel-slide 300ms ease;
+  }
+
+  .controls-minimized {
+    width: auto;
+    min-width: 0;
+    padding: 10px 12px;
+    gap: 0;
+  }
+
+  .controls-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .info {
@@ -879,6 +1741,7 @@
     right: 24px;
     padding: 16px;
     border-radius: 16px;
+<<<<<<< HEAD
     width: min(320px, 88vw);
     display: grid;
     gap: 12px;
@@ -1013,12 +1876,30 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+=======
+    width: min(380px, 92vw);
+    display: grid;
+    gap: 8px;
+    min-height: 0;
+    max-height: calc(100vh - var(--classification-bar-height) - 48px);
+    overflow: auto;
+    animation: panel-slide 280ms ease;
+  }
+
+  .info-minimized {
+    min-height: 0;
+    width: min(260px, 72vw);
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .filters-shell {
     position: absolute;
     left: 0;
+<<<<<<< HEAD
     top: 50%;
+=======
+    top: calc(50% + 56px);
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     transform: translateY(-50%);
     display: flex;
     align-items: center;
@@ -1029,6 +1910,7 @@
   .filters-toggle {
     border: 1px solid var(--border);
     border-radius: 0 12px 12px 0;
+<<<<<<< HEAD
     padding: 12px 14px;
     background: rgba(15, 23, 42, 0.75);
     color: var(--fg);
@@ -1051,13 +1933,53 @@
   .filters h3 {
     margin: 0 0 10px 0;
     font-size: 14px;
+=======
+    padding: 10px 12px;
+    background: rgba(24, 29, 31, 0.8);
+    color: var(--fg);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 12px;
+  }
+
+  .filters {
+    width: 216px;
+    padding: 12px;
+    border-radius: 12px;
+    margin-left: 8px;
+    opacity: 0;
+    transform: translateX(-14px);
+    pointer-events: none;
+    transition:
+      opacity 160ms ease,
+      transform 160ms ease;
+  }
+
+  .filters-open .filters {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+  }
+
+  .filters h3 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.12);
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .filter-group {
     display: grid;
+<<<<<<< HEAD
     gap: 6px;
     margin-bottom: 10px;
     font-size: 13px;
+=======
+    gap: 5px;
+    margin-bottom: 8px;
+    font-size: 12px;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     color: var(--muted);
   }
 
@@ -1069,6 +1991,7 @@
 
   .info h3 {
     margin: 0;
+<<<<<<< HEAD
     font-size: 16px;
   }
 
@@ -1085,34 +2008,128 @@
     border-radius: 8px;
     padding: 6px 8px;
     font-size: 11px;
+=======
+    font-size: 14px;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .info-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.12);
+  }
+
+  .info-heading > div:first-child {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+
+  .info-heading-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 2px;
+    border: 1px solid rgba(157, 169, 160, 0.12);
+    border-radius: 10px;
+    background: rgba(24, 29, 31, 0.42);
+  }
+
+  .tabs button {
+    flex: 1 1 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 4px 6px;
+    font-size: 10px;
+    line-height: 1;
+    min-height: 24px;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     cursor: pointer;
   }
 
   .tabs button.active {
     color: var(--fg);
+<<<<<<< HEAD
     border-color: #60a5fa;
     background: rgba(37, 99, 235, 0.2);
+=======
+    background: rgba(127, 187, 179, 0.18);
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .info-grid {
     display: grid;
+<<<<<<< HEAD
     gap: 10px;
     font-size: 13px;
+=======
+    gap: 6px;
+    font-size: 12px;
+    align-content: start;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .info-grid div {
     display: flex;
     justify-content: space-between;
+<<<<<<< HEAD
   }
 
   .warn {
     color: #ff8797;
+=======
+    gap: 12px;
+    align-items: baseline;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.08);
+  }
+
+  .warn {
+    color: #e69875;
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .control {
     display: grid;
+<<<<<<< HEAD
     gap: 8px;
     font-size: 14px;
+=======
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .panel-section {
+    display: grid;
+    gap: 8px;
+    padding-top: 2px;
+  }
+
+  .panel-section + .panel-section {
+    border-top: 1px solid rgba(157, 169, 160, 0.12);
+    padding-top: 10px;
+  }
+
+  .section-heading {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .control-header {
@@ -1125,4 +2142,283 @@
     width: 100%;
     accent-color: var(--accent);
   }
+<<<<<<< HEAD
 </style>
+=======
+
+  .trajectory-scope {
+    display: grid;
+    gap: 4px;
+  }
+
+  .trajectory-scope select {
+    border: 1px solid var(--border);
+    background: rgba(24, 29, 31, 0.74);
+    color: var(--fg);
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .operator-badge {
+    padding: 4px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: rgba(127, 187, 179, 0.12);
+    border: 1px solid rgba(127, 187, 179, 0.18);
+  }
+
+  .selected-anomaly {
+    color: #e67e80;
+    background: rgba(230, 126, 128, 0.12);
+    border-color: rgba(230, 126, 128, 0.18);
+  }
+
+  .hover-tooltip {
+    position: absolute;
+    z-index: 8;
+    pointer-events: none;
+    min-width: 180px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    display: grid;
+    gap: 4px;
+    font-size: 12px;
+    animation: tooltip-in 120ms ease;
+  }
+
+  .hover-tooltip span {
+    color: var(--muted);
+  }
+
+  @keyframes panel-slide {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes tooltip-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (max-width: 980px) {
+    .overlay,
+    .controls,
+    .info {
+      width: min(92vw, 560px);
+    }
+
+    .overlay {
+      left: 50%;
+      transform: translateX(-50%);
+      top: 12px;
+    }
+
+    .controls {
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 12px;
+    }
+
+    .info {
+      right: 12px;
+      top: 190px;
+    }
+
+    .filters-shell {
+      left: 12px;
+      top: 200px;
+      bottom: 12px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .overlay {
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .overlay-header {
+      flex-direction: column;
+    }
+
+    .overlay-header-main {
+      width: 100%;
+      align-items: flex-start;
+    }
+
+    .actions {
+      width: 100%;
+      grid-template-columns: 1fr;
+    }
+
+    .actions .btn {
+      flex: 1;
+    }
+
+    .controls {
+      width: calc(100vw - 16px);
+      left: 8px;
+      transform: none;
+      bottom: 8px;
+      border-radius: 12px;
+    }
+
+    .info {
+      width: calc(100vw - 16px);
+      left: 8px;
+      right: 8px;
+      border-radius: 12px;
+    }
+
+    .info {
+      top: auto;
+      bottom: 210px;
+      max-height: 320px;
+      overflow: auto;
+    }
+    .filters-shell {
+      left: 8px;
+      bottom: 8px;
+      z-index: 5;
+      top: auto;
+      transform: none;
+    }
+
+    .filters {
+      width: min(240px, 82vw);
+    }
+  }
+
+  @media (min-width: 5000px), (min-height: 3000px) {
+    .overlay {
+      top: 36px;
+      left: 36px;
+      padding: 24px 28px;
+      border-radius: 24px;
+      width: min(860px, 42vw);
+      gap: 18px;
+    }
+
+    .overlay h2 {
+      font-size: 38px;
+    }
+
+    .overlay .eyebrow {
+      font-size: 20px;
+    }
+
+    .controls {
+      bottom: 36px;
+      left: 36px;
+      width: min(420px, 26vw);
+      padding: 18px;
+      border-radius: 22px;
+      gap: 16px;
+    }
+
+    .controls-minimized {
+      padding: 14px 16px;
+    }
+
+    .controls-header,
+    .control-header,
+    .panel-section {
+      gap: 12px;
+    }
+
+    .control,
+    .filter-group,
+    .trajectory-scope select,
+    .info-grid,
+    .hover-tooltip {
+      font-size: 18px;
+    }
+
+    .section-heading,
+    .filters h3 {
+      font-size: 18px;
+    }
+
+    .filters-shell {
+      top: calc(50% + 88px);
+      gap: 16px;
+    }
+
+    .filters-toggle {
+      border-radius: 0 16px 16px 0;
+      padding: 14px 18px;
+      font-size: 18px;
+    }
+
+    .filters {
+      width: 320px;
+      padding: 18px;
+      border-radius: 18px;
+      margin-left: 12px;
+    }
+
+    .info {
+      top: 36px;
+      right: 36px;
+      width: min(520px, 28vw);
+      padding: 22px;
+      border-radius: 22px;
+      gap: 12px;
+      max-height: calc(100vh - var(--classification-bar-height) - 72px);
+    }
+
+    .info-minimized {
+      width: min(340px, 22vw);
+    }
+
+    .info h3 {
+      font-size: 24px;
+    }
+
+    .tabs {
+      border-radius: 14px;
+      padding: 4px;
+      gap: 6px;
+    }
+
+    .tabs button {
+      min-height: 34px;
+      font-size: 15px;
+      padding: 7px 10px;
+      border-radius: 10px;
+    }
+
+    .info-grid div {
+      gap: 18px;
+      padding-bottom: 8px;
+    }
+
+    .operator-badge {
+      font-size: 14px;
+      padding: 6px 10px;
+    }
+
+    .hover-tooltip {
+      min-width: 260px;
+      padding: 14px 16px;
+      border-radius: 16px;
+    }
+  }
+</style>
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302

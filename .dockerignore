@@ -1,0 +1,16 @@
+node_modules
+.svelte-kit
+build
+dist
+.git
+.gitignore
+.DS_Store
+**/.DS_Store
+.env
+.env.docker
+keycloak-server/.env
+*.log
+__pycache__
+*.pyc
+practicum_bak
+temp

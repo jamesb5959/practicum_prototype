@@ -1,14 +1,15 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap');
 
 :root {
-  --bg: #0b1020;
-  --bg-soft: #0f172a;
-  --fg: #e6edf6;
-  --muted: #9fb2c8;
-  --accent: #35c8ff;
-  --accent-2: #5b7fff;
-  --card: rgba(15, 23, 42, 0.55);
-  --border: rgba(148, 163, 184, 0.25);
+  --classification-bar-height: 22px;
+  --bg: #1e2326;
+  --bg-soft: #272e33;
+  --fg: #d3c6aa;
+  --muted: #9da9a0;
+  --accent: #7fbbb3;
+  --accent-2: #a7c080;
+  --card: rgba(39, 46, 51, 0.72);
+  --border: rgba(122, 168, 159, 0.2);
 }
 
 * {
@@ -23,7 +24,12 @@ body {
   height: 100%;
   font-family: "Space Grotesk", "Sora", system-ui, -apple-system, sans-serif;
   color: var(--fg);
-  background: radial-gradient(1200px 800px at 20% 10%, #1a2140, #0b1020 60%);
+  background:
+    radial-gradient(1100px 720px at 18% 10%, rgba(167, 192, 128, 0.1), transparent 58%),
+    radial-gradient(900px 620px at 82% 14%, rgba(127, 187, 179, 0.08), transparent 52%),
+    linear-gradient(160deg, #1e2326 0%, #232a2e 45%, #171c1f 100%);
+  background-attachment: fixed;
+  animation: ambientDrift 18s ease-in-out infinite alternate;
 }
 
 a {
@@ -40,13 +46,13 @@ input {
 }
 
 #svelte {
-  min-height: 100vh;
+  min-height: calc(100vh - var(--classification-bar-height));
 }
 
 .glass {
   background: var(--card);
   border: 1px solid var(--border);
-  box-shadow: 0 30px 60px rgba(2, 6, 23, 0.6);
+  box-shadow: 0 24px 50px rgba(16, 22, 20, 0.35);
   backdrop-filter: blur(18px);
 }
 
@@ -55,15 +61,16 @@ input {
   border-radius: 10px;
   padding: 10px 16px;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #06121f;
+  color: #1a211f;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
 }
 
 .btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(53, 200, 255, 0.35);
+  box-shadow: 0 10px 22px rgba(127, 187, 179, 0.22);
+  filter: saturate(1.05);
 }
 
 .btn.secondary {
@@ -73,7 +80,18 @@ input {
 }
 
 .btn.secondary:hover {
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.4);
+  box-shadow: 0 8px 20px rgba(20, 27, 24, 0.24);
+}
+
+.btn.danger {
+  background: linear-gradient(135deg, #cf6a6a, #b84f5f);
+  color: #f7f1ea;
+  border-color: rgba(184, 79, 95, 0.36);
+}
+
+.btn.danger:hover {
+  box-shadow: 0 10px 24px rgba(184, 79, 95, 0.28);
+  filter: saturate(1.03);
 }
 
 .input {
@@ -81,17 +99,18 @@ input {
   padding: 12px 14px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(24, 29, 31, 0.74);
   color: var(--fg);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
 .input:focus {
-  outline: 2px solid rgba(53, 200, 255, 0.4);
+  outline: 2px solid rgba(127, 187, 179, 0.28);
   border-color: transparent;
 }
 
 .fade-in {
-  animation: fadeIn 600ms ease;
+  animation: fadeIn 720ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes fadeIn {
@@ -103,4 +122,38 @@ input {
     opacity: 1;
     transform: translateY(0);
   }
+<<<<<<< HEAD
 }
+=======
+}
+
+@keyframes ambientDrift {
+  from {
+    background-position: 0% 0%, 100% 0%, 0% 0%;
+  }
+  to {
+    background-position: 3% 2%, 96% 3%, 0% 0%;
+  }
+}
+
+@media (min-width: 5000px), (min-height: 3000px) {
+  :root {
+    --classification-bar-height: 30px;
+  }
+
+  html,
+  body {
+    font-size: 24px;
+  }
+
+  .btn {
+    border-radius: 14px;
+    padding: 14px 22px;
+  }
+
+  .input {
+    padding: 16px 18px;
+    border-radius: 14px;
+  }
+}
+>>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
