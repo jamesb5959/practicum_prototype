@@ -43,6 +43,9 @@
   let trajectoryHours = 12;
   let selectedSat = null;
   let infoTab = 'telemetry';
+  let enrichedFields = null;
+  let enrichedLoading = false;
+  let enrichedError = '';
   let filtersOpen = false;
   let filterLeo = true;
   let filterMeo = false;
@@ -106,6 +109,17 @@
             credit: ''
           })
         ),
+        skyBox: new CesiumLib.SkyBox({
+          sources: {
+            positiveX: '/skybox/px.jpg',
+            negativeX: '/skybox/nx.jpg',
+            positiveY: '/skybox/py.jpg',
+            negativeY: '/skybox/ny.jpg',
+            positiveZ: '/skybox/pz.jpg',
+            negativeZ: '/skybox/nz.jpg'
+          }
+        }),
+        skyAtmosphere: false,
         terrainProvider: new CesiumLib.EllipsoidTerrainProvider(),
         timeline: false,
         animation: false,
@@ -154,6 +168,7 @@
       selectedSat = match.meta;
       selectedTrajectorySatelliteNumber = match.meta?.satelliteNumber ?? null;
       infoTab = 'telemetry';
+      void loadEnrichedForSelected();
     });
 
     hoverHandler = new CesiumLib.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -704,6 +719,27 @@
     conjunctionRightLabel.__conjunctionMarkerEntity = true;
   }
 
+  async function loadEnrichedForSelected() {
+    enrichedFields = null;
+    enrichedError = '';
+    if (!selectedSat?.satelliteNumber) return;
+    try {
+      enrichedLoading = true;
+      const res = await fetch(`/api/enriched?satelliteNumber=${encodeURIComponent(selectedSat.satelliteNumber)}`, {
+        cache: 'no-store'
+      });
+      if (!res.ok) {
+        throw new Error(`Enriched data error: ${res.status}`);
+      }
+      const data = await res.json();
+      enrichedFields = Array.isArray(data?.fields) ? data.fields : [];
+    } catch (err) {
+      enrichedError = err instanceof Error ? err.message : 'Failed to load enriched data';
+    } finally {
+      enrichedLoading = false;
+    }
+  }
+
   function predictionColor(meta = selectedSat) {
     if (!meta || !CesiumLib) {
       return CesiumLib.Color.fromCssColorString('#a7c080');
@@ -748,6 +784,11 @@
     selectedSat?.collisionTimeIso;
     $activeConjunctions;
     updateConjunctionMarker();
+  }
+
+  $: if (viewer && CesiumLib) {
+    selectedSat?.satelliteNumber;
+    void loadEnrichedForSelected();
   }
 </script>
 
@@ -919,6 +960,7 @@
         </button>
         <button class:active={infoTab === 'orbit'} on:click={() => (infoTab = 'orbit')}>Orbit</button>
         <button class:active={infoTab === 'risk'} on:click={() => (infoTab = 'risk')}>Risk</button>
+        <button class:active={infoTab === 'missions'} on:click={() => (infoTab = 'missions')}>Missions</button>
       </div>
 
       {#if infoTab === 'telemetry'}
@@ -960,6 +1002,22 @@
           <div><span class="label">Closest approach</span><strong>{selectedSat.collisionDistanceKm ? `${selectedSat.collisionDistanceKm} km` : 'None'}</strong></div>
           <div><span class="label">Expected time</span><strong>{selectedSat.collisionTimeIso ? new Date(selectedSat.collisionTimeIso).toLocaleString() : 'None'}</strong></div>
         </div>
+      {/if}
+
+      {#if infoTab === 'missions'}
+        {#if enrichedLoading}
+          <div class="label">Loading enriched fields…</div>
+        {:else if enrichedError}
+          <div class="error">{enrichedError}</div>
+        {:else if enrichedFields && enrichedFields.length}
+          <div class="info-grid">
+            {#each enrichedFields as field}
+              <div><span class="label">{field.label}</span><strong>{field.value}</strong></div>
+            {/each}
+          </div>
+        {:else}
+          <div class="label">No enriched fields found for this satellite.</div>
+        {/if}
       {/if}
       {/if}
 

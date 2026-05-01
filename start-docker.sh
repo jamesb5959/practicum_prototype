@@ -21,6 +21,18 @@ ensure_env_files() {
   set +a
 }
 
+ensure_skybox_assets() {
+  local SKYBOX_DIR="static/skybox"
+  local SKYBOX_FILES=(px.jpg nx.jpg py.jpg ny.jpg pz.jpg nz.jpg)
+  for f in "${SKYBOX_FILES[@]}"; do
+    if [ ! -f "$SKYBOX_DIR/$f" ]; then
+      echo "Missing skybox face: $SKYBOX_DIR/$f"
+      echo "Place 6 faces named px.jpg nx.jpg py.jpg ny.jpg pz.jpg nz.jpg in $SKYBOX_DIR."
+      exit 1
+    fi
+  done
+}
+
 detect_local_ip() {
   local default_iface local_ip
   default_iface="$(route get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
@@ -52,6 +64,7 @@ check_port_conflict() {
 case "${1:-}" in
   up)
     ensure_env_files
+    ensure_skybox_assets
     check_port_conflict
     MODE="${2:-cpu}"
     COMPOSE_FILES=(-f docker-compose.full.yml)
