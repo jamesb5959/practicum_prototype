@@ -14,4 +14,5 @@ __pycache__/
 TLE_Prediction/models/*.pth
 TLE_Prediction/cache/*.jsonl
 TLE_Prediction/cache/fontlist-v*.json
+TLE_Prediction/venv/
 practicum_bak/

@@ -13,6 +13,8 @@ WARPCORE_DATASET="static/data/88_most_recent_satellites_LEO.csv"
 PREDICTION_DATASET="TLE_Prediction/data/88_most_recent_satellites_LEO.csv"
 MODEL_PATH="TLE_Prediction/models/mldsgp4_best_model.pth"
 TEXTURE_PATH="static/textures/earth.jpg"
+SKYBOX_DIR="static/skybox"
+SKYBOX_FILES=(px.jpg nx.jpg py.jpg ny.jpg pz.jpg nz.jpg)
 
 echo "Ensuring project directories exist..."
 mkdir -p TLE_Prediction/cache TLE_Prediction/data keycloak-server
@@ -41,6 +43,15 @@ if [ ! -f "$TEXTURE_PATH" ]; then
   echo "Add the texture file before running the Docker stack."
   exit 1
 fi
+
+echo "Checking skybox images..."
+for f in "${SKYBOX_FILES[@]}"; do
+  if [ ! -f "$SKYBOX_DIR/$f" ]; then
+    echo "Missing skybox face: $SKYBOX_DIR/$f"
+    echo "Place 6 faces named px.jpg nx.jpg py.jpg ny.jpg pz.jpg nz.jpg in $SKYBOX_DIR before building."
+    exit 1
+  fi
+done
 
 if [ ! -f ".env.docker" ]; then
   echo "Creating .env.docker from .env.docker.example..."
