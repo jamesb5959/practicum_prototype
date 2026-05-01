@@ -1,11 +1,5 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
-<<<<<<< HEAD
-  import { goto } from '$app/navigation';
-  import { browser } from '$app/environment';
-  import { isAuthenticated, logout } from '$lib/auth';
-  import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
-=======
   import { browser } from '$app/environment';
   import { activeClassification } from '$lib/classification';
   import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
@@ -15,7 +9,6 @@
     refreshConjunctions
   } from '$lib/conjunction';
   import { findConjunctionForSatellite } from '$lib/collisionUtils';
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   import 'cesium/Build/Cesium/Widgets/widgets.css';
 
   let viewer;
@@ -24,11 +17,6 @@
   let error = '';
   let lastUpdated = '';
   let satelliteCount = 0;
-<<<<<<< HEAD
-  let dataSource = 'NASA';
-  let refreshTimer;
-  let positionTimer;
-=======
   let dataSource = 'WARPCORE TLE';
   let refreshTimer;
   let positionTimer;
@@ -47,121 +35,64 @@
   let trajectoryRefreshTimer;
   const TRAJECTORY_CACHE_TTL_MS = 60 * 1000;
   const trajectoryPositionCache = new Map();
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
 
   let allSatellites = [];
   let tracked = [];
   let displayCount = 10;
   let renderedSatelliteCount = 0;
-<<<<<<< HEAD
-  let trajectoryHours = 24;
-  let selectedSat = null;
-  let infoTab = 'telemetry';
-  let selectedAnomalyAnalysis = null;
-  let anomalyChatInput = '';
-  let anomalyChatMessages = [];
-  let anomalyChatSat = '';
-=======
   let trajectoryHours = 12;
   let selectedSat = null;
   let infoTab = 'telemetry';
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   let filtersOpen = false;
   let filterLeo = true;
   let filterMeo = false;
   let filterGeo = false;
   let filterDebris = true;
   let showTrajectoryLines = false;
-<<<<<<< HEAD
-  let filterUnclassified = true;
-  let filterCui = false;
-  let filterClassified = false;
-  let sensitivePromptOpen = false;
-  let sensitivePasswordInput = '';
-  let sensitivePasswordError = '';
-  let pendingSensitiveFilter = '';
-  const SENSITIVE_FILTER_PASSWORD = 'admin';
-=======
   let trajectoryScope = 'selected';
   let overlayMinimized = false;
   let infoMinimized = false;
   let displayMinimized = false;
   let selectedTrajectorySatelliteNumber = null;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   const LEO_MAX_KM = 2000;
   const MEO_MAX_KM = 35786;
   const MAX_PROTOTYPE_SATELLITES = 2000;
   const SAT_ICON_BLUE = svgData(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-<<<<<<< HEAD
-      '<rect x="13" y="10" width="6" height="12" rx="2" fill="#4dd7ff"/>' +
-      '<rect x="6" y="12" width="6" height="8" rx="1" fill="#7fe3ff"/>' +
-      '<rect x="20" y="12" width="6" height="8" rx="1" fill="#7fe3ff"/>' +
-      '<circle cx="16" cy="16" r="2" fill="#0b1020"/>' +
-=======
       '<rect x="13" y="10" width="6" height="12" rx="2" fill="#7fbbb3"/>' +
       '<rect x="6" y="12" width="6" height="8" rx="1" fill="#a7c080"/>' +
       '<rect x="20" y="12" width="6" height="8" rx="1" fill="#a7c080"/>' +
       '<circle cx="16" cy="16" r="2" fill="#1e2326"/>' +
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     '</svg>'
   );
   const SAT_ICON_RED = svgData(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-<<<<<<< HEAD
-      '<rect x="13" y="10" width="6" height="12" rx="2" fill="#ff5a6b"/>' +
-      '<rect x="6" y="12" width="6" height="8" rx="1" fill="#ff8797"/>' +
-      '<rect x="20" y="12" width="6" height="8" rx="1" fill="#ff8797"/>' +
-      '<circle cx="16" cy="16" r="2" fill="#0b1020"/>' +
-=======
       '<rect x="13" y="10" width="6" height="12" rx="2" fill="#e69875"/>' +
       '<rect x="6" y="12" width="6" height="8" rx="1" fill="#d6996b"/>' +
       '<rect x="20" y="12" width="6" height="8" rx="1" fill="#d6996b"/>' +
       '<circle cx="16" cy="16" r="2" fill="#1e2326"/>' +
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     '</svg>'
   );
   const SAT_ICON_DEBRIS = svgData(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-<<<<<<< HEAD
-      '<path d="M16 4 L24 7 L28 14 L25 23 L17 28 L9 25 L4 17 L7 8 Z" fill="#facc15"/>' +
-      '<path d="M11 12 L21 20 M20 11 L12 21" stroke="#0b1020" stroke-width="1.8" stroke-linecap="round"/>' +
-      '<circle cx="6.5" cy="6.5" r="1.5" fill="#fde047"/>' +
-      '<circle cx="26" cy="9" r="1.2" fill="#fde047"/>' +
-      '<circle cx="24.5" cy="25" r="1.3" fill="#fde047"/>' +
-=======
       '<path d="M16 4 L24 7 L28 14 L25 23 L17 28 L9 25 L4 17 L7 8 Z" fill="#dbbc7f"/>' +
       '<path d="M11 12 L21 20 M20 11 L12 21" stroke="#1e2326" stroke-width="1.8" stroke-linecap="round"/>' +
       '<circle cx="6.5" cy="6.5" r="1.5" fill="#e6c384"/>' +
       '<circle cx="26" cy="9" r="1.2" fill="#e6c384"/>' +
       '<circle cx="24.5" cy="25" r="1.3" fill="#e6c384"/>' +
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     '</svg>'
   );
   const WARN_ICON = svgData(
     '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
-<<<<<<< HEAD
-      '<path d="M16 4 L29 28 H3 Z" fill="#ffb84d"/>' +
-=======
       '<path d="M16 4 L29 28 H3 Z" fill="#dbbc7f"/>' +
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       '<rect x="15" y="11" width="2" height="9" fill="#1f1400"/>' +
       '<rect x="15" y="22.5" width="2" height="2" fill="#1f1400"/>' +
     '</svg>'
   );
 
   onMount(async () => {
-<<<<<<< HEAD
-    if (!isAuthenticated()) {
-      goto('/login');
-      return;
-    }
-
-    if (!browser) return;
-=======
     if (!browser) return;
     initCollisionConfig();
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
 
     try {
       CesiumLib = await import('cesium');
@@ -208,16 +139,6 @@
     viewer.selectedEntityChanged.addEventListener((entity) => {
       if (!entity) {
         selectedSat = null;
-<<<<<<< HEAD
-        infoTab = 'telemetry';
-        return;
-      }
-      const match = tracked.find((item) => item.entity === entity);
-      selectedSat = match ? match.meta : null;
-      infoTab = 'telemetry';
-    });
-
-=======
         selectedTrajectorySatelliteNumber = null;
         infoTab = 'telemetry';
         clearPredictionTrajectories();
@@ -259,13 +180,10 @@
       };
     }, CesiumLib.ScreenSpaceEventType.MOUSE_MOVE);
 
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     await loadData();
 
     refreshTimer = setInterval(loadData, 10 * 60 * 1000);
     positionTimer = setInterval(updatePositions, 5000);
-<<<<<<< HEAD
-=======
     trajectoryRefreshTimer = setInterval(() => {
       if (!viewer || !CesiumLib || (!showTrajectoryLines && !tracked.some((item) => item.meta?.anomaly))) {
         return;
@@ -273,7 +191,6 @@
       clearTrajectoryCache();
       void loadPredictionTrajectories();
     }, TRAJECTORY_CACHE_TTL_MS);
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   });
 
   function loadTexture(url) {
@@ -292,15 +209,12 @@
   onDestroy(() => {
     clearInterval(refreshTimer);
     clearInterval(positionTimer);
-<<<<<<< HEAD
-=======
     clearInterval(trajectoryRefreshTimer);
     if (hoverHandler) {
       hoverHandler.destroy();
     }
     clearPredictionTrajectories();
     clearConjunctionMarker();
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     if (viewer) {
       viewer.destroy();
     }
@@ -314,13 +228,6 @@
       const { activeText, debrisText, source } = await fetchActiveAndDebrisTle();
       const activeSats = parseTle(activeText).map((sat) => ({ ...sat, isDebris: false }));
       const debrisSats = parseTle(debrisText).map((sat) => ({ ...sat, isDebris: true }));
-<<<<<<< HEAD
-      dataSource = source;
-      lastUpdated = new Date().toLocaleString();
-      allSatellites = [...activeSats, ...debrisSats];
-      satelliteCount = allSatellites.length;
-      rebuildEntities();
-=======
       await refreshConjunctions(activeSats);
       dataSource = source;
       lastUpdated = new Date().toLocaleString();
@@ -335,7 +242,6 @@
           selectedTrajectorySatelliteNumber = match.meta?.satelliteNumber ?? null;
         }
       }
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load data.';
       if (!lastUpdated) {
@@ -361,41 +267,6 @@
       if (item.warnEntity) {
         item.warnEntity.position = item.entity.position;
       }
-<<<<<<< HEAD
-      if (item.trajectory && showTrajectoryLines) {
-        item.trajectory.polyline.positions = buildTrajectoryWithOffset(
-          item.satrec,
-          trajectoryHours,
-          item.latOffset || 0,
-          item.lonOffset || 0
-        );
-      }
-      if (selectedSat && item.meta && selectedSat.name === item.meta.name) {
-        selectedSat = {
-          ...selectedSat,
-          lat: shifted.lat.toFixed(3),
-          lon: shifted.lon.toFixed(3),
-          altKm: shifted.altKm.toFixed(1)
-        };
-      }
-    }
-  }
-
-  function buildTrajectory(satrec, hours) {
-    const positions = [];
-    const now = Date.now();
-    const totalMs = hours * 60 * 60 * 1000;
-    const steps = Math.min(160, Math.max(16, Math.floor(hours / 3)));
-    for (let i = 0; i <= steps; i += 1) {
-      const time = new Date(now + (totalMs * i) / steps);
-      const geo = propagateToGeodetic(satrec, time);
-      if (!geo) continue;
-      positions.push(
-        CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000)
-      );
-    }
-    return positions;
-=======
       if (selectedSat && item.meta && selectedSat.name === item.meta.name) {
         selectedSat.lat = shifted.lat.toFixed(3);
         selectedSat.lon = shifted.lon.toFixed(3);
@@ -406,7 +277,6 @@
       clearTrajectoryCache();
       refreshTrajectoryEntityPositions();
     }
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   function clampLat(lat) {
@@ -428,96 +298,6 @@
     };
   }
 
-<<<<<<< HEAD
-  function buildTrajectoryWithOffset(satrec, hours, latOffset, lonOffset) {
-    const positions = [];
-    const now = Date.now();
-    const totalMs = hours * 60 * 60 * 1000;
-    const steps = Math.min(160, Math.max(16, Math.floor(hours / 3)));
-    for (let i = 0; i <= steps; i += 1) {
-      const time = new Date(now + (totalMs * i) / steps);
-      const geo = propagateToGeodetic(satrec, time);
-      if (!geo) continue;
-      const shifted = applyGeoOffset(geo, latOffset, lonOffset);
-      positions.push(
-        CesiumLib.Cartesian3.fromDegrees(shifted.lon, shifted.lat, shifted.altKm * 1000)
-      );
-    }
-    return positions;
-  }
-
-  function seededUnit(seed) {
-    const x = Math.sin(seed) * 10000;
-    return x - Math.floor(x);
-  }
-
-  function buildRandomCloneOffsets(name, cloneId) {
-    const seed = hashString(`${name}-${cloneId}`);
-    return {
-      latOffset: seededUnit(seed) * 140 - 70,
-      lonOffset: seededUnit(seed * 1.37 + 17) * 360 - 180
-    };
-  }
-
-  function hashString(value) {
-    let hash = 0;
-    for (let i = 0; i < value.length; i += 1) {
-      hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-    }
-    return hash;
-  }
-
-  function buildAnomalyAnalysis(meta) {
-    const seed = hashString(meta.name);
-    const causeOptions = [
-      'attitude control drift signature',
-      'reaction wheel torque imbalance',
-      'thermal expansion affecting panel alignment',
-      'minor orbit determination residual growth'
-    ];
-    const actionOptions = [
-      'adjust +2.0° north',
-      'adjust +1.8° north-east',
-      'adjust +2.2° north-west',
-      'apply +2.0° north with 0.4° east trim'
-    ];
-    const cause = causeOptions[seed % causeOptions.length];
-    const action = actionOptions[(seed >>> 2) % actionOptions.length];
-    const resolutionHours = 240 + (seed % 121); // 10-15 days in hours
-
-    return {
-      cause,
-      resolutionHours,
-      action,
-      confidence: 82 + (seed % 14)
-    };
-  }
-
-  function buildFakeAnomalyReply(userText) {
-    if (!selectedAnomalyAnalysis) return 'No anomaly model context is active.';
-    const seed = hashString(userText.toLowerCase());
-    const variants = [
-      `Telemetry trend suggests we keep monitoring for the next ${selectedAnomalyAnalysis.resolutionHours} hours.`,
-      `Best visual recommendation remains: ${selectedAnomalyAnalysis.action}.`,
-      `Primary signal still points to ${selectedAnomalyAnalysis.cause}.`,
-      `No escalation needed yet. Re-check guidance after one orbital cycle.`
-    ];
-    return variants[seed % variants.length];
-  }
-
-  function submitAnomalyChat() {
-    const text = anomalyChatInput.trim();
-    if (!text) return;
-    anomalyChatMessages = [
-      ...anomalyChatMessages,
-      { role: 'user', text },
-      { role: 'assistant', text: buildFakeAnomalyReply(text) }
-    ];
-    anomalyChatInput = '';
-  }
-
-=======
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   function getOrbitBand(altKm) {
     if (altKm <= LEO_MAX_KM) return 'LEO';
     if (altKm <= MEO_MAX_KM) return 'MEO';
@@ -531,11 +311,8 @@
 
   function rebuildEntities() {
     if (!viewer || !CesiumLib) return;
-<<<<<<< HEAD
-=======
     clearPredictionTrajectories();
     clearConjunctionMarker();
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     viewer.entities.removeAll();
     tracked = [];
     const now = new Date();
@@ -548,46 +325,10 @@
       .filter(({ sat, geo }) => {
         if (sat.isDebris) return filterDebris;
         if (!isOrbitEnabled(geo.altKm)) return false;
-<<<<<<< HEAD
-        // Current feed has no security classification metadata.
-        if (!filterUnclassified) return false;
-=======
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         return true;
       });
     const satelliteVisible = visible.filter(({ sat }) => !sat.isDebris);
     const debrisVisible = visible.filter(({ sat }) => sat.isDebris);
-<<<<<<< HEAD
-    satelliteCount = satelliteVisible.length;
-    renderedSatelliteCount = satelliteVisible.length
-      ? Math.min(Math.max(1, displayCount), MAX_PROTOTYPE_SATELLITES)
-      : 0;
-    const selectedSatellites = [];
-    for (let i = 0; i < renderedSatelliteCount; i += 1) {
-      const base = satelliteVisible[i % satelliteVisible.length];
-      const cloneRound = Math.floor(i / satelliteVisible.length);
-      const cloneId = i + 1;
-      const randomOffsets =
-        cloneRound > 0 ? buildRandomCloneOffsets(base.sat.name, cloneId) : { latOffset: 0, lonOffset: 0 };
-      selectedSatellites.push({
-        ...base,
-        latOffset: randomOffsets.latOffset,
-        lonOffset: randomOffsets.lonOffset,
-        cloneId,
-        isClone: cloneRound > 0
-      });
-    }
-    const selected = [...selectedSatellites, ...debrisVisible];
-    for (let i = 0; i < selected.length; i += 1) {
-      const { sat, geo } = selected[i];
-      const latOffset = selected[i].latOffset || 0;
-      const lonOffset = selected[i].lonOffset || 0;
-      const shifted = applyGeoOffset(geo, latOffset, lonOffset);
-      const anomaly = !sat.isDebris && sat.name.length % 7 === 0;
-      const status = sat.isDebris ? 'DEBRIS' : anomaly ? 'ANOMALY' : 'NORMAL';
-      const pressure = (0.0001 + (sat.name.length % 9) * 0.00003).toFixed(6);
-      const uptime = `${(sat.name.length % 28) + 1} days`;
-=======
     const actualVisible = [...satelliteVisible, ...debrisVisible];
     const anomalySatelliteNumbers = new Set(
       $activeConjunctions.flatMap((event) => [event.primarySatelliteNumber, event.secondarySatelliteNumber])
@@ -612,17 +353,12 @@
       const conjunction = findConjunctionForSatellite($activeConjunctions, sat.fields.satelliteNumber);
       const anomaly = Boolean(conjunction);
       const status = sat.isDebris ? 'DEBRIS' : 'TRACKED';
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       const position = CesiumLib.Cartesian3.fromDegrees(
         shifted.lon,
         shifted.lat,
         shifted.altKm * 1000
       );
-<<<<<<< HEAD
-      const displayName = sat.isDebris || !selected[i].isClone ? sat.name : `${sat.name} #${selected[i].cloneId}`;
-=======
       const displayName = sat.name;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       const entity = viewer.entities.add({
         name: displayName,
         position,
@@ -647,50 +383,20 @@
             }
           })
         : null;
-<<<<<<< HEAD
-      const trajectory = showTrajectoryLines
-        ? viewer.entities.add({
-            polyline: {
-              positions: buildTrajectoryWithOffset(sat.satrec, trajectoryHours, latOffset, lonOffset),
-              width: 1.5,
-              material: (
-                sat.isDebris
-                  ? CesiumLib.Color.LIGHTGRAY
-                  : anomaly
-                    ? CesiumLib.Color.RED
-                    : CesiumLib.Color.CYAN
-              ).withAlpha(0.45)
-            }
-          })
-        : null;
-=======
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       tracked.push({
         satrec: sat.satrec,
         latOffset,
         lonOffset,
         entity,
-<<<<<<< HEAD
-        trajectory,
-=======
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         warnEntity,
         meta: {
           name: displayName,
           status,
-<<<<<<< HEAD
-          pressure,
-          uptime,
-=======
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
           anomaly,
           objectType: sat.isDebris ? 'Debris' : 'Satellite',
           orbitBand: getOrbitBand(geo.altKm),
           lat: shifted.lat.toFixed(3),
           lon: shifted.lon.toFixed(3),
-<<<<<<< HEAD
-          altKm: shifted.altKm.toFixed(1)
-=======
           altKm: shifted.altKm.toFixed(1),
           classification: sat.fields.classification,
           satelliteNumber: sat.fields.satelliteNumber,
@@ -709,88 +415,12 @@
           collisionTimeIso: conjunction?.timeIso ?? null,
           line1: sat.line1,
           line2: sat.line2
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         }
       });
     }
     updatePositions();
   }
 
-<<<<<<< HEAD
-  function handleLogout() {
-    logout();
-    goto('/login');
-  }
-
-  function handleDashboard() {
-    goto('/dashboard');
-  }
-
-  function requestSensitiveFilter(filterName) {
-    pendingSensitiveFilter = filterName;
-    sensitivePasswordInput = '';
-    sensitivePasswordError = '';
-    sensitivePromptOpen = true;
-  }
-
-  function handleCuiChange(event) {
-    const checked = event.currentTarget.checked;
-    if (!checked) {
-      filterCui = false;
-      return;
-    }
-    requestSensitiveFilter('cui');
-  }
-
-  function handleClassifiedChange(event) {
-    const checked = event.currentTarget.checked;
-    if (!checked) {
-      filterClassified = false;
-      return;
-    }
-    requestSensitiveFilter('classified');
-  }
-
-  function closeSensitivePrompt() {
-    sensitivePromptOpen = false;
-    pendingSensitiveFilter = '';
-    sensitivePasswordInput = '';
-    sensitivePasswordError = '';
-  }
-
-  function submitSensitivePassword() {
-    if (sensitivePasswordInput !== SENSITIVE_FILTER_PASSWORD) {
-      sensitivePasswordError = 'Incorrect password.';
-      return;
-    }
-
-    if (pendingSensitiveFilter === 'cui') {
-      filterCui = true;
-    }
-    if (pendingSensitiveFilter === 'classified') {
-      filterClassified = true;
-    }
-    closeSensitivePrompt();
-  }
-
-  $: selectedAnomalyAnalysis =
-    selectedSat && selectedSat.anomaly ? buildAnomalyAnalysis(selectedSat) : null;
-
-  $: {
-    const satName = selectedSat && selectedSat.anomaly ? selectedSat.name : '';
-    if (satName !== anomalyChatSat) {
-      anomalyChatSat = satName;
-      anomalyChatInput = '';
-      anomalyChatMessages = satName
-        ? [
-            {
-              role: 'assistant',
-              text: 'Anomaly assistant ready. Ask for probable cause, timing, or maneuver guidance.'
-            }
-          ]
-        : [];
-    }
-=======
   function clearPredictionTrajectories() {
     predictionError = '';
     predictionLoading = false;
@@ -1093,34 +723,14 @@
 
   function handleDashboard() {
     window.location.href = '/dashboard';
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   $: if (viewer && CesiumLib) {
     displayCount;
-<<<<<<< HEAD
-    trajectoryHours;
-=======
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     filterLeo;
     filterMeo;
     filterGeo;
     filterDebris;
-<<<<<<< HEAD
-    filterUnclassified;
-    filterCui;
-    filterClassified;
-    showTrajectoryLines;
-    rebuildEntities();
-  }
-</script>
-
-<svelte:head>
-  <title>LEO Prototype | Space View</title>
-</svelte:head>
-
-<div class="space_view" class:sensitive-blur={sensitivePromptOpen}>
-=======
     rebuildEntities();
   }
 
@@ -1146,23 +756,10 @@
 </svelte:head>
 
 <div class="space-view">
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   <div id="cesiumContainer"></div>
 
   <div class="overlay glass fade-in">
     <div class="overlay-header">
-<<<<<<< HEAD
-      <h2>LEO Prototype - Space View</h2>
-      <div class="actions">
-        <button class="btn secondary" on:click={loadData} disabled={loading}>
-          {loading ? 'Refreshing...' : 'Refresh Data'}
-        </button>
-        <button class="btn secondary" on:click={handleDashboard}>Dashboard</button>
-        <button class="btn secondary" on:click={handleLogout}>Logout</button>
-      </div>
-    </div>
-
-=======
       <div class="overlay-header-main">
         <div class="overlay-title">
           <span class="eyebrow">Orbital Operations</span>
@@ -1182,7 +779,6 @@
     </div>
 
     {#if !overlayMinimized}
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     <div class="legend">
       <span class="legend-item"><span class="dot nominal"></span> Normal</span>
       <span class="legend-item"><span class="dot anomaly"></span> Anomaly</span>
@@ -1190,17 +786,6 @@
     </div>
 
     <div class="stats">
-<<<<<<< HEAD
-      <div>
-        <span class="label">Satellites loaded</span>
-        <strong>{satelliteCount}</strong>
-      </div>
-      <div>
-        <span class="label">Data source</span>
-        <strong>{dataSource}</strong>
-      </div>
-      <div>
-=======
       <div class="stat-row">
         <span class="label">Satellites loaded</span>
         <strong>{satelliteCount}</strong>
@@ -1218,7 +803,6 @@
         <strong>{$activeClassification}</strong>
       </div>
       <div class="stat-row">
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         <span class="label">Last updated</span>
         <strong>{lastUpdated || 'Loading...'}</strong>
       </div>
@@ -1227,41 +811,6 @@
     {#if error}
       <div class="error">{error}</div>
     {/if}
-<<<<<<< HEAD
-  </div>
-
-  <div class="controls glass fade-in">
-    <div class="control">
-      <div class="control-header">
-        <span>Satellites to view</span>
-        <strong>{renderedSatelliteCount}</strong>
-      </div>
-      <input
-        class="range"
-        type="range"
-        min="1"
-        max={MAX_PROTOTYPE_SATELLITES}
-        step="1"
-        bind:value={displayCount}
-      />
-    </div>
-
-    {#if showTrajectoryLines}
-      <div class="control">
-        <div class="control-header">
-          <span>Trajectory hours</span>
-          <strong>{trajectoryHours}h</strong>
-        </div>
-        <input
-          class="range"
-          type="range"
-          min="1"
-          max="480"
-          step="1"
-          bind:value={trajectoryHours}
-        />
-      </div>
-=======
     {#if predictionError}
       <div class="error">{predictionError}</div>
     {/if}
@@ -1317,7 +866,6 @@
           </div>
         </div>
       {/if}
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     {/if}
   </div>
 
@@ -1334,15 +882,6 @@
         <label><input type="checkbox" bind:checked={filterDebris} /> Debris</label>
       </div>
       <div class="filter-group">
-<<<<<<< HEAD
-        <label><input type="checkbox" bind:checked={filterUnclassified} /> UNCLASSIFIED</label>
-        <label><input type="checkbox" checked={filterCui} on:change={handleCuiChange} /> CUI</label>
-        <label>
-          <input type="checkbox" checked={filterClassified} on:change={handleClassifiedChange} />
-          CLASSIFIED
-        </label>
-        <label><input type="checkbox" bind:checked={showTrajectoryLines} /> Trajectory lines</label>
-=======
         <label><input type="checkbox" bind:checked={showTrajectoryLines} /> Trajectory lines</label>
         {#if showTrajectoryLines}
           <label class="trajectory-scope">
@@ -1353,16 +892,11 @@
             </select>
           </label>
         {/if}
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       </div>
     </div>
   </div>
 
   {#if selectedSat}
-<<<<<<< HEAD
-    <div class="info glass fade-in">
-      <h3>{selectedSat.name}</h3>
-=======
     <div class:info-minimized={infoMinimized} class="info glass fade-in">
       <div class="info-heading">
         <div>
@@ -1379,7 +913,6 @@
         </div>
       </div>
       {#if !infoMinimized}
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
       <div class="tabs">
         <button class:active={infoTab === 'telemetry'} on:click={() => (infoTab = 'telemetry')}>
           Telemetry
@@ -1392,13 +925,6 @@
         <div class="info-grid">
           <div>
             <span class="label">Status</span>
-<<<<<<< HEAD
-            <strong class:warn={selectedSat.anomaly}>{selectedSat.status}</strong>
-          </div>
-          <div><span class="label">Object</span><strong>{selectedSat.objectType}</strong></div>
-          <div><span class="label">Pressure</span><strong>{selectedSat.pressure}</strong></div>
-          <div><span class="label">Uptime</span><strong>{selectedSat.uptime}</strong></div>
-=======
             <strong class:warn={selectedSat.anomaly}>{selectedSat.anomaly ? 'ANOMALY' : selectedSat.status}</strong>
           </div>
           <div><span class="label">Object</span><strong>{selectedSat.objectType}</strong></div>
@@ -1406,7 +932,6 @@
           <div><span class="label">TLE class</span><strong>{selectedSat.classification}</strong></div>
           <div><span class="label">Designator</span><strong>{selectedSat.internationalDesignator || '—'}</strong></div>
           <div><span class="label">Epoch</span><strong>{selectedSat.epochIso}</strong></div>
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         </div>
       {/if}
 
@@ -1416,27 +941,17 @@
           <div><span class="label">Latitude</span><strong>{selectedSat.lat || '—'}</strong></div>
           <div><span class="label">Longitude</span><strong>{selectedSat.lon || '—'}</strong></div>
           <div><span class="label">Altitude</span><strong>{selectedSat.altKm || '—'} km</strong></div>
-<<<<<<< HEAD
-=======
           <div><span class="label">Inclination</span><strong>{selectedSat.inclination}°</strong></div>
           <div><span class="label">RAAN</span><strong>{selectedSat.raan}°</strong></div>
           <div><span class="label">Eccentricity</span><strong>{selectedSat.eccentricity}</strong></div>
           <div><span class="label">Arg. perigee</span><strong>{selectedSat.argumentOfPerigee}°</strong></div>
           <div><span class="label">Mean anomaly</span><strong>{selectedSat.meanAnomaly}°</strong></div>
           <div><span class="label">Mean motion</span><strong>{selectedSat.meanMotion}</strong></div>
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
         </div>
       {/if}
 
       {#if infoTab === 'risk'}
         <div class="info-grid">
-<<<<<<< HEAD
-          <div><span class="label">Risk level</span><strong>{selectedSat.anomaly ? 'Elevated' : 'Low'}</strong></div>
-          <div><span class="label">Proximity risk</span><strong>{selectedSat.anomaly ? 'Monitor' : 'Nominal'}</strong></div>
-          <div><span class="label">Recommended action</span><strong>{selectedSat.anomaly ? 'Plan correction burn' : 'None'}</strong></div>
-        </div>
-      {/if}
-=======
           <div><span class="label">Catalog type</span><strong>{selectedSat.objectType}</strong></div>
           <div><span class="label">App classification</span><strong>{$activeClassification}</strong></div>
           <div><span class="label">Trajectory horizon</span><strong>{trajectoryHours} hours</strong></div>
@@ -1447,64 +962,10 @@
         </div>
       {/if}
       {/if}
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
 
     </div>
   {/if}
 
-<<<<<<< HEAD
-  {#if selectedAnomalyAnalysis}
-    <div class="anomaly-llm glass fade-in">
-      <h3>Anomaly Assistant</h3>
-      <p>
-        Preliminary model readout indicates <strong>{selectedAnomalyAnalysis.cause}</strong>.
-      </p>
-      <p>
-        Predicted correction window: <strong>{selectedAnomalyAnalysis.resolutionHours} hours</strong>.
-      </p>
-      <p>
-        Suggested maneuver: <strong>{selectedAnomalyAnalysis.action}</strong>.
-      </p>
-      <p class="confidence">Model confidence: {selectedAnomalyAnalysis.confidence}%</p>
-      <div class="chat-log">
-        {#each anomalyChatMessages as message}
-          <div class="chat-msg" class:user={message.role === 'user'}>
-            <span class="chat-role">{message.role === 'user' ? 'You' : 'Assistant'}</span>
-            <span>{message.text}</span>
-          </div>
-        {/each}
-      </div>
-      <form class="chat-form" on:submit|preventDefault={submitAnomalyChat}>
-        <input
-          class="chat-input"
-          type="text"
-          placeholder="Ask anomaly assistant..."
-          bind:value={anomalyChatInput}
-        />
-      </form>
-    </div>
-  {/if}
-
-  {#if sensitivePromptOpen}
-    <div class="sensitive-backdrop">
-      <form class="sensitive-modal glass" on:submit|preventDefault={submitSensitivePassword}>
-        <h3>Restricted Filter Access</h3>
-        <p>Enter password to enable {pendingSensitiveFilter === 'cui' ? 'CUI' : 'CLASSIFIED'}.</p>
-        <input
-          type="password"
-          class="sensitive-input"
-          placeholder="Password"
-          bind:value={sensitivePasswordInput}
-        />
-        {#if sensitivePasswordError}
-          <div class="sensitive-error">{sensitivePasswordError}</div>
-        {/if}
-        <div class="sensitive-actions">
-          <button type="button" class="btn secondary" on:click={closeSensitivePrompt}>Cancel</button>
-          <button type="submit" class="btn secondary">Continue</button>
-        </div>
-      </form>
-=======
   {#if hoverTooltip}
     <div
       class="hover-tooltip glass"
@@ -1513,25 +974,11 @@
       <strong>{hoverTooltip.name}</strong>
       <span>{hoverTooltip.status}</span>
       <span>{hoverTooltip.orbitBand} • {hoverTooltip.altKm} km</span>
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     </div>
   {/if}
 </div>
 
 <style>
-<<<<<<< HEAD
-  .space_view {
-    position: relative;
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
-  }
-
-  .space_view.sensitive-blur > :not(.sensitive-backdrop) {
-    filter: blur(4px);
-  }
-
-=======
   .space-view {
     position: relative;
     width: 100vw;
@@ -1539,7 +986,6 @@
     overflow: hidden;
   }
 
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   #cesiumContainer {
     position: absolute;
     inset: 0;
@@ -1549,20 +995,6 @@
     position: absolute;
     top: 24px;
     left: 24px;
-<<<<<<< HEAD
-    padding: 20px;
-    border-radius: 16px;
-    width: min(420px, 90vw);
-    display: grid;
-    gap: 16px;
-  }
-
-  .overlay-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-=======
     padding: 16px 18px;
     border-radius: 16px;
     width: min(380px, 86vw);
@@ -1574,20 +1006,10 @@
   .overlay-header {
     display: grid;
     gap: 10px;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .overlay-header h2 {
     margin: 0;
-<<<<<<< HEAD
-    font-size: 18px;
-  }
-
-  .actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-=======
     font-size: 16px;
     letter-spacing: 0.02em;
   }
@@ -1613,7 +1035,6 @@
 
   .panel-toggle {
     white-space: nowrap;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .stats {
@@ -1621,29 +1042,18 @@
     gap: 12px;
   }
 
-<<<<<<< HEAD
-  .stats div {
-    display: flex;
-    justify-content: space-between;
-    font-size: 14px;
-=======
   .stat-row {
     display: flex;
     justify-content: space-between;
     font-size: 14px;
     padding-top: 8px;
     border-top: 1px solid rgba(157, 169, 160, 0.12);
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .label {
     color: var(--muted);
   }
 
-<<<<<<< HEAD
-  .error {
-    color: #ff8797;
-=======
   .eyebrow {
     color: var(--accent);
     font-size: 11px;
@@ -1653,7 +1063,6 @@
 
   .error {
     color: #e69875;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     font-size: 13px;
   }
 
@@ -1678,17 +1087,6 @@
   }
 
   .dot.nominal {
-<<<<<<< HEAD
-    background: #4dd7ff;
-  }
-
-  .dot.anomaly {
-    background: #ff5a6b;
-  }
-
-  .dot.debris {
-    background: #facc15;
-=======
     background: #a7c080;
   }
 
@@ -1698,20 +1096,12 @@
 
   .dot.debris {
     background: #c5a46d;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .controls {
     position: absolute;
     bottom: 24px;
     left: 24px;
-<<<<<<< HEAD
-    padding: 16px;
-    border-radius: 16px;
-    width: min(320px, 88vw);
-    display: grid;
-    gap: 16px;
-=======
     padding: 12px;
     border-radius: 16px;
     width: min(292px, 82vw);
@@ -1732,7 +1122,6 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .info {
@@ -1741,142 +1130,6 @@
     right: 24px;
     padding: 16px;
     border-radius: 16px;
-<<<<<<< HEAD
-    width: min(320px, 88vw);
-    display: grid;
-    gap: 12px;
-  }
-
-  .anomaly-llm {
-    position: absolute;
-    right: 24px;
-    bottom: 24px;
-    width: min(340px, 88vw);
-    padding: 14px;
-    border-radius: 16px;
-    display: grid;
-    gap: 8px;
-    z-index: 4;
-  }
-
-  .anomaly-llm h3 {
-    margin: 0;
-    font-size: 15px;
-  }
-
-  .anomaly-llm p {
-    margin: 0;
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 1.45;
-  }
-
-  .anomaly-llm strong {
-    color: var(--fg);
-  }
-
-  .confidence {
-    color: #ffb84d;
-  }
-
-  .chat-log {
-    max-height: 140px;
-    overflow: auto;
-    display: grid;
-    gap: 6px;
-    margin-top: 4px;
-    padding-right: 2px;
-  }
-
-  .chat-msg {
-    font-size: 12px;
-    display: grid;
-    gap: 2px;
-    color: var(--muted);
-  }
-
-  .chat-msg.user {
-    color: #d2e9ff;
-  }
-
-  .chat-role {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    opacity: 0.8;
-  }
-
-  .chat-form {
-    margin-top: 4px;
-  }
-
-  .chat-input {
-    width: 100%;
-    border: 1px solid var(--border);
-    background: rgba(15, 23, 42, 0.65);
-    color: var(--fg);
-    border-radius: 10px;
-    padding: 8px 10px;
-    font-size: 12px;
-    outline: none;
-  }
-
-  .chat-input:focus {
-    border-color: #60a5fa;
-  }
-
-  .sensitive-backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(2, 6, 23, 0.45);
-    display: grid;
-    place-items: center;
-    z-index: 20;
-  }
-
-  .sensitive-modal {
-    width: min(360px, 92vw);
-    padding: 16px;
-    border-radius: 14px;
-    display: grid;
-    gap: 10px;
-  }
-
-  .sensitive-modal h3 {
-    margin: 0;
-    font-size: 16px;
-  }
-
-  .sensitive-modal p {
-    margin: 0;
-    color: var(--muted);
-    font-size: 13px;
-  }
-
-  .sensitive-input {
-    border: 1px solid var(--border);
-    background: rgba(15, 23, 42, 0.65);
-    color: var(--fg);
-    border-radius: 10px;
-    padding: 9px 10px;
-    font-size: 13px;
-    outline: none;
-  }
-
-  .sensitive-input:focus {
-    border-color: #60a5fa;
-  }
-
-  .sensitive-error {
-    color: #ff8797;
-    font-size: 12px;
-  }
-
-  .sensitive-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-=======
     width: min(380px, 92vw);
     display: grid;
     gap: 8px;
@@ -1889,17 +1142,12 @@
   .info-minimized {
     min-height: 0;
     width: min(260px, 72vw);
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .filters-shell {
     position: absolute;
     left: 0;
-<<<<<<< HEAD
-    top: 50%;
-=======
     top: calc(50% + 56px);
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     transform: translateY(-50%);
     display: flex;
     align-items: center;
@@ -1910,30 +1158,6 @@
   .filters-toggle {
     border: 1px solid var(--border);
     border-radius: 0 12px 12px 0;
-<<<<<<< HEAD
-    padding: 12px 14px;
-    background: rgba(15, 23, 42, 0.75);
-    color: var(--fg);
-    cursor: pointer;
-    font-weight: 600;
-  }
-
-  .filters {
-    width: 240px;
-    padding: 16px;
-    border-radius: 12px;
-    transform: translateX(-260px);
-    transition: transform 200ms ease;
-  }
-
-  .filters-open .filters {
-    transform: translateX(0);
-  }
-
-  .filters h3 {
-    margin: 0 0 10px 0;
-    font-size: 14px;
-=======
     padding: 10px 12px;
     background: rgba(24, 29, 31, 0.8);
     color: var(--fg);
@@ -1966,20 +1190,13 @@
     font-size: 13px;
     padding-bottom: 8px;
     border-bottom: 1px solid rgba(157, 169, 160, 0.12);
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .filter-group {
     display: grid;
-<<<<<<< HEAD
-    gap: 6px;
-    margin-bottom: 10px;
-    font-size: 13px;
-=======
     gap: 5px;
     margin-bottom: 8px;
     font-size: 12px;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     color: var(--muted);
   }
 
@@ -1991,24 +1208,6 @@
 
   .info h3 {
     margin: 0;
-<<<<<<< HEAD
-    font-size: 16px;
-  }
-
-  .tabs {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-  }
-
-  .tabs button {
-    border: 1px solid var(--border);
-    background: rgba(15, 23, 42, 0.5);
-    color: var(--muted);
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-size: 11px;
-=======
     font-size: 14px;
     line-height: 1.15;
     white-space: nowrap;
@@ -2057,41 +1256,24 @@
     font-size: 10px;
     line-height: 1;
     min-height: 24px;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
     cursor: pointer;
   }
 
   .tabs button.active {
     color: var(--fg);
-<<<<<<< HEAD
-    border-color: #60a5fa;
-    background: rgba(37, 99, 235, 0.2);
-=======
     background: rgba(127, 187, 179, 0.18);
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .info-grid {
     display: grid;
-<<<<<<< HEAD
-    gap: 10px;
-    font-size: 13px;
-=======
     gap: 6px;
     font-size: 12px;
     align-content: start;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .info-grid div {
     display: flex;
     justify-content: space-between;
-<<<<<<< HEAD
-  }
-
-  .warn {
-    color: #ff8797;
-=======
     gap: 12px;
     align-items: baseline;
     padding-bottom: 4px;
@@ -2100,15 +1282,10 @@
 
   .warn {
     color: #e69875;
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .control {
     display: grid;
-<<<<<<< HEAD
-    gap: 8px;
-    font-size: 14px;
-=======
     gap: 6px;
     font-size: 12px;
   }
@@ -2129,7 +1306,6 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--accent);
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
   }
 
   .control-header {
@@ -2142,9 +1318,6 @@
     width: 100%;
     accent-color: var(--accent);
   }
-<<<<<<< HEAD
-</style>
-=======
 
   .trajectory-scope {
     display: grid;
@@ -2421,4 +1594,3 @@
     }
   }
 </style>
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302

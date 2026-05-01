@@ -51,11 +51,7 @@ fi
 echo "Installing Python dependencies for TLE_Prediction..."
 python3 -m pip install -r TLE_Prediction/requirements.txt
 
-<<<<<<< HEAD
-echo "Setup complete."
-=======
 echo "Setup complete."
 echo "Next steps:"
 echo "  1. Start Keycloak: cd keycloak-server && cp .env.example .env && docker compose up -d"
 echo "  2. Start the app: ./start.sh"
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302

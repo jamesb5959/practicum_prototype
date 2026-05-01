@@ -122,9 +122,6 @@ input {
     opacity: 1;
     transform: translateY(0);
   }
-<<<<<<< HEAD
-}
-=======
 }
 
 @keyframes ambientDrift {
@@ -156,4 +153,3 @@ input {
     border-radius: 14px;
   }
 }
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302

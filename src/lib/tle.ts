@@ -183,9 +183,6 @@ export function propagateToGeodetic(
     lon: satellite.degreesLong(geodetic.longitude),
     altKm: geodetic.height
   };
-<<<<<<< HEAD
-}
-=======
 }
 
 export function propagateToEci(
@@ -201,4 +198,3 @@ export function propagateToEci(
     z: positionAndVelocity.position.z
   };
 }
->>>>>>> d2690bf3e35508a9ba14fbe18b50a4131de75302
