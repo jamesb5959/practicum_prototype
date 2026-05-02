@@ -598,11 +598,11 @@
         {:else if detailsItem.kind === 'conjunction'}
           <div class="summary-grid details-grid">
             <div>
-              <span class="label">Primary satellite</span>
+              <span class="label">Satellite 1</span>
               <strong>{detailsItem.primarySatelliteNumber}</strong>
             </div>
             <div>
-              <span class="label">Secondary satellite</span>
+              <span class="label">Satellite 2</span>
               <strong>{detailsItem.secondarySatelliteNumber}</strong>
             </div>
             <div>
