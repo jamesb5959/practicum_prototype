@@ -44,6 +44,70 @@
 
   let detailsRequestId = 0;
 
+  let summaryRequestId = 0;
+  const enrichedNameCache = new Map();
+
+  function normalizeSatelliteNumber(value) {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) return '';
+    const normalized = trimmed.replace(/^0+/, '');
+    return normalized || trimmed;
+  }
+
+  function formatSatelliteNumber(value) {
+    return normalizeSatelliteNumber(value);
+  }
+
+  function normalizeEnrichedLabel(label) {
+    return String(label ?? '').trim().toLowerCase();
+  }
+
+  function getEnrichedSatelliteNameFromFields(fields) {
+    if (!Array.isArray(fields)) return null;
+    const match = fields.find((field) => normalizeEnrichedLabel(field?.label) === 'satellite name');
+    const value = String(match?.value ?? '').trim();
+    return value || null;
+  }
+
+  function fallbackSatelliteName(satelliteNumber, tleName) {
+    const satNum = formatSatelliteNumber(satelliteNumber);
+    const raw = String(tleName ?? '').replace(/^0\s+/, '').trim();
+
+    if (raw) {
+      const withoutNoradAndNum = satNum
+        ? raw.replace(new RegExp(`^NORAD\\s+0*${satNum}\\s*\\|\\s*`, 'i'), '')
+        : raw.replace(/^NORAD\s+\d+\s*\|\s*/i, '');
+      const withoutNorad = withoutNoradAndNum.replace(/^NORAD\s+/i, '').trim();
+      if (withoutNorad) return withoutNorad;
+    }
+
+    return satNum ? `Satellite ${satNum}` : 'Satellite';
+  }
+
+  function formatLatLon(lat, lon) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return 'Lat —°, Lon —°';
+    }
+    return `Lat ${Number(lat).toFixed(2)}°, Lon ${Number(lon).toFixed(2)}°`;
+  }
+
+  async function getEnrichedSatelliteName(satelliteNumber) {
+    const key = normalizeSatelliteNumber(satelliteNumber);
+    if (!key) return null;
+    if (enrichedNameCache.has(key)) return enrichedNameCache.get(key);
+
+    try {
+      const fields = await fetchEnrichedFields(
+        `/api/enriched?satelliteNumber=${encodeURIComponent(key)}`
+      );
+      const name = getEnrichedSatelliteNameFromFields(fields);
+      enrichedNameCache.set(key, name);
+      return name;
+    } catch {
+      return null;
+    }
+  }
+
   onMount(async () => {
     if (!browser) return;
     initCollisionConfig();
@@ -101,19 +165,22 @@
   async function loadSummary() {
     loading = true;
     error = '';
+    const requestId = (summaryRequestId += 1);
 
     try {
       const { activeText, debrisText, source } = await fetchActiveAndDebrisTle();
+      if (requestId !== summaryRequestId) return;
       const activeSats = parseTle(activeText);
       const debrisSats = parseTle(debrisText);
       const conjunctions = await refreshConjunctions(activeSats);
+      if (requestId !== summaryRequestId) return;
 
       activeCount = activeSats.length;
       debrisCount = debrisSats.length;
       dataSource = source;
       lastUpdated = new Date().toLocaleString();
 
-      operational = activeSats.slice(0, 6).map((sat) => {
+      const operationalBase = activeSats.slice(0, 6).map((sat) => {
         const geo = propagateToGeodetic(sat.satrec, new Date());
         const altKm = geo ? Math.round(geo.altKm) : null;
         const orbitBand =
@@ -128,7 +195,7 @@
         return {
           kind: 'satellite',
           context: 'operational',
-          name: sat.name,
+          name: fallbackSatelliteName(sat.fields?.satelliteNumber, sat.name),
           satelliteNumber: sat.fields?.satelliteNumber,
           status: 'tracked',
           orbitBand,
@@ -148,18 +215,21 @@
         { leo: 0, meo: 0, geo: 0 }
       );
 
-      attention = [
+      const attentionBase = [
         ...conjunctions.slice(0, 4).map((event) => ({
           kind: 'conjunction',
-          name: `${event.primarySatelliteNumber} / ${event.secondarySatelliteNumber}`,
+          name: `#${formatSatelliteNumber(event.primarySatelliteNumber)} / #${formatSatelliteNumber(event.secondarySatelliteNumber)}`,
           status: 'critical',
-          issue: `${event.distanceKm.toFixed(2)} km at ${new Date(event.timeIso).toLocaleString()}`,
+          issue: `#${formatSatelliteNumber(event.primarySatelliteNumber)} / #${formatSatelliteNumber(event.secondarySatelliteNumber)} • ${event.distanceKm.toFixed(2)} km @ ${new Date(event.timeIso).toLocaleString()} • ${formatLatLon(event.markerLat, event.markerLon)}`,
           primarySatelliteNumber: event.primarySatelliteNumber,
           secondarySatelliteNumber: event.secondarySatelliteNumber,
-          primaryName: event.primaryName,
-          secondaryName: event.secondaryName,
+          primaryName: fallbackSatelliteName(event.primarySatelliteNumber, event.primaryName),
+          secondaryName: fallbackSatelliteName(event.secondarySatelliteNumber, event.secondaryName),
           distanceKm: event.distanceKm,
-          timeIso: event.timeIso
+          timeIso: event.timeIso,
+          markerLat: event.markerLat,
+          markerLon: event.markerLon,
+          markerAltKm: event.markerAltKm
         })),
         {
           kind: 'stat',
@@ -186,6 +256,45 @@
           issue: `${activeCount} Warpcore objects available`
         }
       ];
+
+      const [operationalEnriched, attentionEnriched] = await Promise.all([
+        Promise.all(
+          operationalBase.map(async (item) => {
+            const enrichedName = await getEnrichedSatelliteName(item.satelliteNumber);
+            return {
+              ...item,
+              name: enrichedName || item.name
+            };
+          })
+        ),
+        Promise.all(
+          attentionBase.map(async (item) => {
+            if (item?.kind !== 'conjunction') return item;
+
+            const [primaryName, secondaryName] = await Promise.all([
+              getEnrichedSatelliteName(item.primarySatelliteNumber),
+              getEnrichedSatelliteName(item.secondarySatelliteNumber)
+            ]);
+
+            const primaryDisplay =
+              primaryName || item.primaryName || `#${formatSatelliteNumber(item.primarySatelliteNumber)}`;
+            const secondaryDisplay =
+              secondaryName || item.secondaryName || `#${formatSatelliteNumber(item.secondarySatelliteNumber)}`;
+
+            return {
+              ...item,
+              name: `${primaryDisplay} / ${secondaryDisplay}`,
+              primaryName: primaryDisplay,
+              secondaryName: secondaryDisplay,
+              issue: `#${formatSatelliteNumber(item.primarySatelliteNumber)} / #${formatSatelliteNumber(item.secondarySatelliteNumber)} • ${item.distanceKm.toFixed(2)} km @ ${new Date(item.timeIso).toLocaleString()} • ${formatLatLon(item.markerLat, item.markerLon)}`
+            };
+          })
+        )
+      ]);
+
+      if (requestId !== summaryRequestId) return;
+      operational = operationalEnriched;
+      attention = attentionEnriched;
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load data.';
       if (!lastUpdated) {
@@ -304,6 +413,13 @@
         );
         if (requestId !== detailsRequestId) return;
         detailsEnrichedFields = fields;
+
+        const enrichedName = getEnrichedSatelliteNameFromFields(fields);
+        const cacheKey = normalizeSatelliteNumber(satNum);
+        if (cacheKey) enrichedNameCache.set(cacheKey, enrichedName);
+        if (enrichedName) {
+          detailsItem = { ...detailsItem, name: enrichedName };
+        }
       }
 
       if (item?.kind === 'conjunction') {
@@ -321,6 +437,13 @@
               );
               if (requestId !== detailsRequestId) return;
               detailsPrimaryEnrichedFields = fields;
+
+              const enrichedName = getEnrichedSatelliteNameFromFields(fields);
+              const cacheKey = normalizeSatelliteNumber(primaryNum);
+              if (cacheKey) enrichedNameCache.set(cacheKey, enrichedName);
+              if (enrichedName) {
+                detailsItem = { ...detailsItem, primaryName: enrichedName };
+              }
             } catch (err) {
               if (requestId !== detailsRequestId) return;
               detailsPrimaryEnrichedError = err instanceof Error ? err.message : 'Failed to load enriched data';
@@ -336,6 +459,13 @@
               );
               if (requestId !== detailsRequestId) return;
               detailsSecondaryEnrichedFields = fields;
+
+              const enrichedName = getEnrichedSatelliteNameFromFields(fields);
+              const cacheKey = normalizeSatelliteNumber(secondaryNum);
+              if (cacheKey) enrichedNameCache.set(cacheKey, enrichedName);
+              if (enrichedName) {
+                detailsItem = { ...detailsItem, secondaryName: enrichedName };
+              }
             } catch (err) {
               if (requestId !== detailsRequestId) return;
               detailsSecondaryEnrichedError = err instanceof Error ? err.message : 'Failed to load enriched data';
@@ -527,11 +657,11 @@
             </span>
             <h2>
               {detailsItem.kind === 'conjunction'
-                ? `${detailsItem.primarySatelliteNumber} / ${detailsItem.secondarySatelliteNumber}`
+                ? `#${formatSatelliteNumber(detailsItem.primarySatelliteNumber)} / #${formatSatelliteNumber(detailsItem.secondarySatelliteNumber)}`
                 : detailsItem.name}
             </h2>
             {#if detailsItem.kind === 'satellite' && detailsItem.satelliteNumber}
-              <span class="label">NORAD {detailsItem.satelliteNumber}</span>
+              <span class="label">#{formatSatelliteNumber(detailsItem.satelliteNumber)}</span>
             {/if}
           </div>
           <button class="btn secondary" on:click={closeDetails}>Close</button>
@@ -568,7 +698,10 @@
                 <div class="details-issue-row">
                   <strong>{event.distanceKm.toFixed(2)} km</strong>
                   <span class="issue">{new Date(event.timeIso).toLocaleString()}</span>
-                  <span class="label">{event.primarySatelliteNumber} / {event.secondarySatelliteNumber}</span>
+                  <span class="label">
+                    #{formatSatelliteNumber(event.primarySatelliteNumber)} / #{formatSatelliteNumber(event.secondarySatelliteNumber)}
+                    • {formatLatLon(event.markerLat, event.markerLon)}
+                  </span>
                 </div>
               {/each}
             {:else}
@@ -599,11 +732,11 @@
           <div class="summary-grid details-grid">
             <div>
               <span class="label">Satellite 1</span>
-              <strong>{detailsItem.primarySatelliteNumber}</strong>
+              <strong>#{formatSatelliteNumber(detailsItem.primarySatelliteNumber)}</strong>
             </div>
             <div>
               <span class="label">Satellite 2</span>
-              <strong>{detailsItem.secondarySatelliteNumber}</strong>
+              <strong>#{formatSatelliteNumber(detailsItem.secondarySatelliteNumber)}</strong>
             </div>
             <div>
               <span class="label">Closest approach</span>
@@ -612,6 +745,10 @@
             <div>
               <span class="label">Expected time</span>
               <strong>{new Date(detailsItem.timeIso).toLocaleString()}</strong>
+            </div>
+            <div>
+              <span class="label">Location</span>
+              <strong>{formatLatLon(detailsItem.markerLat, detailsItem.markerLon)}</strong>
             </div>
             <div>
               <span class="label">Satellite 1 name</span>
@@ -695,7 +832,12 @@
             on:keydown={(event) => handleCardKeydown(event, sat)}
           >
             <span class="status-dot operational-dot"></span>
-            <span class="sat-name">{sat.name}</span>
+            <div class="sat-info">
+              <strong class="sat-name">{sat.name}</strong>
+              {#if sat.satelliteNumber}
+                <span class="issue">#{formatSatelliteNumber(sat.satelliteNumber)}</span>
+              {/if}
+            </div>
             <span class="badge operational-badge">TRACKED</span>
           </article>
         {/each}
