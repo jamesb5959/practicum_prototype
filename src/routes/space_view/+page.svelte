@@ -997,22 +997,24 @@
     </div>
 
     {#if !(showTrajectoryLines || showAnomalyTrajectoryLines) || !displayMinimized}
-      <div class="panel-section">
-        <div class="control">
-          <div class="control-header">
-            <span>Satellites to view</span>
-            <strong>{renderedSatelliteCount}</strong>
+      {#if showTrajectoryLines}
+        <div class="panel-section">
+          <div class="control">
+            <div class="control-header">
+              <span>Satellites to view</span>
+              <strong>{renderedSatelliteCount}</strong>
+            </div>
+            <input
+              class="range"
+              type="range"
+              min="1"
+              max={Math.max(1, satelliteCount)}
+              step="1"
+              bind:value={displayCount}
+            />
           </div>
-          <input
-            class="range"
-            type="range"
-            min="1"
-            max={Math.max(1, satelliteCount)}
-            step="1"
-            bind:value={displayCount}
-          />
         </div>
-      </div>
+      {/if}
 
       {#if showTrajectoryLines || showAnomalyTrajectoryLines}
         <div class="panel-section">
