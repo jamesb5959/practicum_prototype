@@ -20,11 +20,11 @@
   let dataSource = 'WARPCORE TLE';
   let refreshTimer;
   let positionTimer;
-  let predictionTrajectory;
   let predictionTrajectories = [];
   let predictionLoading = false;
   let predictionError = '';
   let predictionRequestId = 0;
+  let conjunctionSpots = [];
   let conjunctionMarker = null;
   let conjunctionLeftLabel = null;
   let conjunctionRightLabel = null;
@@ -32,6 +32,9 @@
   let hoverX = 0;
   let hoverY = 0;
   let hoverHandler;
+  let trajectoryRefreshTimer;
+  const TRAJECTORY_CACHE_TTL_MS = 60 * 1000;
+  const trajectoryPositionCache = new Map();
 
   let allSatellites = [];
   let tracked = [];
@@ -40,16 +43,23 @@
   let trajectoryHours = 12;
   let selectedSat = null;
   let infoTab = 'telemetry';
+  let enrichedFields = null;
+  let enrichedLoading = false;
+  let enrichedError = '';
   let filtersOpen = false;
   let filterLeo = true;
   let filterMeo = false;
   let filterGeo = false;
   let filterDebris = true;
   let showTrajectoryLines = false;
+  let showAnomalyTrajectoryLines = true;
   let trajectoryScope = 'selected';
   let overlayMinimized = false;
   let infoMinimized = false;
   let displayMinimized = false;
+  let selectedTrajectorySatelliteNumber = null;
+  let focusedConjunctionSatelliteNumbers = [];
+  let focusedConjunctionEvent = null;
   const LEO_MAX_KM = 2000;
   const MEO_MAX_KM = 35786;
   const MAX_PROTOTYPE_SATELLITES = 2000;
@@ -102,6 +112,17 @@
             credit: ''
           })
         ),
+        skyBox: new CesiumLib.SkyBox({
+          sources: {
+            positiveX: '/skybox/px.jpg',
+            negativeX: '/skybox/nx.jpg',
+            positiveY: '/skybox/py.jpg',
+            negativeY: '/skybox/ny.jpg',
+            positiveZ: '/skybox/pz.jpg',
+            negativeZ: '/skybox/nz.jpg'
+          }
+        }),
+        skyAtmosphere: false,
         terrainProvider: new CesiumLib.EllipsoidTerrainProvider(),
         timeline: false,
         animation: false,
@@ -135,11 +156,18 @@
     viewer.selectedEntityChanged.addEventListener((entity) => {
       if (!entity) {
         selectedSat = null;
+        selectedTrajectorySatelliteNumber = null;
+        focusedConjunctionSatelliteNumbers = [];
+        focusedConjunctionEvent = null;
         infoTab = 'telemetry';
         clearPredictionTrajectories();
         return;
       }
-      if (entity.__trajectoryEntity || entity.__conjunctionMarkerEntity) {
+      if (entity.__conjunctionMarkerEntity && entity.__conjunctionEvent) {
+        activateConjunctionFocus(entity.__conjunctionEvent);
+        return;
+      }
+      if (entity.__trajectoryEntity) {
         return;
       }
       const match = tracked.find((item) => item.entity === entity);
@@ -147,7 +175,13 @@
         return;
       }
       selectedSat = match.meta;
+      selectedTrajectorySatelliteNumber = match.meta?.satelliteNumber ?? null;
+      focusedConjunctionSatelliteNumbers = [];
+      focusedConjunctionEvent = match.meta?.anomaly
+        ? findConjunctionForSatellite($activeConjunctions, match.meta?.satelliteNumber)
+        : null;
       infoTab = 'telemetry';
+      void loadEnrichedForSelected();
     });
 
     hoverHandler = new CesiumLib.ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -178,6 +212,13 @@
 
     refreshTimer = setInterval(loadData, 10 * 60 * 1000);
     positionTimer = setInterval(updatePositions, 5000);
+    trajectoryRefreshTimer = setInterval(() => {
+      if (!viewer || !CesiumLib || !showTrajectoryLines) {
+        return;
+      }
+      clearTrajectoryCache();
+      void loadPredictionTrajectories();
+    }, TRAJECTORY_CACHE_TTL_MS);
   });
 
   function loadTexture(url) {
@@ -196,11 +237,13 @@
   onDestroy(() => {
     clearInterval(refreshTimer);
     clearInterval(positionTimer);
+    clearInterval(trajectoryRefreshTimer);
     if (hoverHandler) {
       hoverHandler.destroy();
     }
     clearPredictionTrajectories();
-    clearConjunctionMarker();
+    clearConjunctionSpots();
+    clearConjunctionMarkerLabels();
     if (viewer) {
       viewer.destroy();
     }
@@ -218,12 +261,14 @@
       dataSource = source;
       lastUpdated = new Date().toLocaleString();
       allSatellites = [...activeSats, ...debrisSats];
+      clearTrajectoryCache();
       satelliteCount = allSatellites.length;
       rebuildEntities();
       if (selectedSat?.satelliteNumber) {
         const match = tracked.find((item) => item.meta?.satelliteNumber === selectedSat.satelliteNumber);
         if (match) {
           selectedSat = match.meta;
+          selectedTrajectorySatelliteNumber = match.meta?.satelliteNumber ?? null;
         }
       }
     } catch (err) {
@@ -252,13 +297,14 @@
         item.warnEntity.position = item.entity.position;
       }
       if (selectedSat && item.meta && selectedSat.name === item.meta.name) {
-        selectedSat = {
-          ...selectedSat,
-          lat: shifted.lat.toFixed(3),
-          lon: shifted.lon.toFixed(3),
-          altKm: shifted.altKm.toFixed(1)
-        };
+        selectedSat.lat = shifted.lat.toFixed(3);
+        selectedSat.lon = shifted.lon.toFixed(3);
+        selectedSat.altKm = shifted.altKm.toFixed(1);
       }
+    }
+    if (predictionTrajectories.length) {
+      clearTrajectoryCache();
+      refreshTrajectoryEntityPositions();
     }
   }
 
@@ -295,7 +341,7 @@
   function rebuildEntities() {
     if (!viewer || !CesiumLib) return;
     clearPredictionTrajectories();
-    clearConjunctionMarker();
+    clearConjunctionSpots();
     viewer.entities.removeAll();
     tracked = [];
     const now = new Date();
@@ -407,19 +453,27 @@
   function clearPredictionTrajectories() {
     predictionError = '';
     predictionLoading = false;
-    if (viewer && predictionTrajectory) {
-      viewer.entities.remove(predictionTrajectory);
-    }
     if (viewer && predictionTrajectories.length) {
       for (const entity of predictionTrajectories) {
         viewer.entities.remove(entity);
       }
     }
-    predictionTrajectory = null;
     predictionTrajectories = [];
   }
 
-  function clearConjunctionMarker() {
+  function clearTrajectoryCache() {
+    trajectoryPositionCache.clear();
+  }
+
+  function clearConjunctionSpots() {
+    if (!viewer) return;
+    for (const entity of conjunctionSpots) {
+      viewer.entities.remove(entity);
+    }
+    conjunctionSpots = [];
+  }
+
+  function clearConjunctionMarkerLabels() {
     if (!viewer) return;
     if (conjunctionMarker) viewer.entities.remove(conjunctionMarker);
     if (conjunctionLeftLabel) viewer.entities.remove(conjunctionLeftLabel);
@@ -429,29 +483,75 @@
     conjunctionRightLabel = null;
   }
 
+  function activateConjunctionFocus(event) {
+    if (!event) return;
+    focusedConjunctionSatelliteNumbers = [
+      event.primarySatelliteNumber,
+      event.secondarySatelliteNumber
+    ].filter(Boolean);
+    focusedConjunctionEvent = event;
+    showTrajectoryLines = true;
+    trajectoryScope = 'selected';
+
+    const primaryMatch = tracked.find(
+      (item) => item.meta?.satelliteNumber === event.primarySatelliteNumber
+    );
+    if (!primaryMatch?.meta) {
+      return;
+    }
+
+    selectedSat = primaryMatch.meta;
+    selectedTrajectorySatelliteNumber = primaryMatch.meta.satelliteNumber ?? null;
+    infoTab = 'risk';
+    void loadEnrichedForSelected();
+  }
+
   async function loadPredictionTrajectories() {
     if (!viewer || !CesiumLib) return;
-    clearPredictionTrajectories();
 
     const manualTargets = showTrajectoryLines
-      ? trajectoryScope === 'all'
-        ? tracked.map((item) => item.meta).filter((meta) => meta?.line1 && meta?.line2)
-        : selectedSat?.line1 && selectedSat?.line2
-          ? [selectedSat]
-          : []
+      ? focusedConjunctionSatelliteNumbers.length
+        ? tracked
+            .map((item) => item.meta)
+            .filter(
+              (meta) =>
+                meta?.line1 &&
+                meta?.line2 &&
+                focusedConjunctionSatelliteNumbers.includes(meta.satelliteNumber)
+            )
+        : trajectoryScope === 'all'
+          ? tracked.map((item) => item.meta).filter((meta) => meta?.line1 && meta?.line2)
+          : selectedTrajectorySatelliteNumber
+            ? tracked
+                .map((item) => item.meta)
+                .filter(
+                  (meta) =>
+                    meta?.satelliteNumber === selectedTrajectorySatelliteNumber && meta?.line1 && meta?.line2
+                )
+            : []
       : [];
 
-    const targets =
-      [
-        ...manualTargets,
-        ...tracked.map((item) => item.meta).filter((meta) => meta?.anomaly)
-      ].filter(
+    const anomalyTargets = showAnomalyTrajectoryLines
+      ? tracked
+          .map((item) => item.meta)
+          .filter(
+            (meta) =>
+              meta?.line1 &&
+              meta?.line2 &&
+              (focusedConjunctionSatelliteNumbers.length
+                ? focusedConjunctionSatelliteNumbers.includes(meta.satelliteNumber)
+                : meta?.anomaly)
+          )
+      : [];
+
+    const targets = [...manualTargets, ...anomalyTargets].filter(
         (meta, index, items) =>
           meta &&
           items.findIndex((candidate) => candidate?.satelliteNumber === meta.satelliteNumber) === index
       );
 
-    if ((!showTrajectoryLines && !targets.some((meta) => meta?.anomaly)) || !targets.length) {
+    if (!targets.length) {
+      clearPredictionTrajectories();
       return;
     }
 
@@ -460,49 +560,57 @@
     const requestId = ++predictionRequestId;
 
     try {
-      const results = await Promise.allSettled(
-        targets.map(async (meta) => {
-          const positions = buildTrajectoryPositions(meta, trajectoryHours);
-          if (!positions || requestId !== predictionRequestId) {
-            return null;
-          }
+      const targetSatelliteNumbers = new Set(targets.map((meta) => meta.satelliteNumber));
 
-          return viewer.entities.add({
+      if (viewer && predictionTrajectories.length) {
+        for (const entity of predictionTrajectories) {
+          if (!targetSatelliteNumbers.has(entity.__satelliteNumber)) {
+            viewer.entities.remove(entity);
+          }
+        }
+      }
+
+      const entities = [];
+
+      for (const meta of targets) {
+        const positions = getCachedTrajectoryPositions(
+          meta,
+          trajectoryHours,
+          getTrajectoryConjunctionEvent(meta) ?? null
+        );
+        if (!positions || requestId !== predictionRequestId) {
+          continue;
+        }
+
+        let entity = predictionTrajectories.find((candidate) => candidate.__satelliteNumber === meta.satelliteNumber);
+
+        if (!entity) {
+          const mutablePositions = positions.slice();
+          entity = viewer.entities.add({
             polyline: {
-              positions: new CesiumLib.CallbackProperty(
-                () => buildTrajectoryPositions(meta, trajectoryHours),
-                false
-              ),
-              width: meta.anomaly ? 2.6 : meta.name === selectedSat?.name ? 2.8 : 1.8,
-              material: !meta.anomaly && trajectoryScope === 'selected' && meta.name === selectedSat?.name
-                ? new CesiumLib.PolylineDashMaterialProperty({
-                    color: predictionColor(meta).withAlpha(0.88),
-                    gapColor: CesiumLib.Color.TRANSPARENT,
-                    dashLength: 18
-                  })
-                : predictionColor(meta).withAlpha(meta.name === selectedSat?.name ? 0.82 : 0.48),
+              positions: mutablePositions,
+              width: trajectoryWidth(meta),
+              material: trajectoryMaterial(meta),
               clampToGround: false
             }
           });
-        })
-      );
+          entity.__trajectoryEntity = true;
+          entity.__satelliteNumber = meta.satelliteNumber;
+          entity.__trajectoryPositions = mutablePositions;
+        } else {
+          syncTrajectoryPositions(entity, positions);
+          entity.polyline.width = trajectoryWidth(meta);
+          entity.polyline.material = trajectoryMaterial(meta);
+        }
+
+        entities.push(entity);
+      }
 
       if (requestId !== predictionRequestId) {
         return;
       }
 
-      predictionTrajectories = results
-        .filter((result) => result.status === 'fulfilled' && result.value)
-        .map((result) => {
-          result.value.__trajectoryEntity = true;
-          return result.value;
-        });
-      predictionTrajectory = predictionTrajectories[0] ?? null;
-
-      const rejected = results.find((result) => result.status === 'rejected');
-      if (rejected?.status === 'rejected') {
-        predictionError = rejected.reason instanceof Error ? rejected.reason.message : 'Prediction failed.';
-      }
+      predictionTrajectories = entities;
     } catch (err) {
       if (requestId !== predictionRequestId) {
         return;
@@ -515,18 +623,107 @@
     }
   }
 
-  function buildTrajectoryPositions(meta, hours) {
-    const trackedItem = tracked.find((item) => item.meta?.name === meta.name);
+  function getTrajectoryConjunctionEvent(meta) {
+    if (focusedConjunctionEvent) {
+      if (
+        focusedConjunctionEvent.primarySatelliteNumber === meta.satelliteNumber ||
+        focusedConjunctionEvent.secondarySatelliteNumber === meta.satelliteNumber
+      ) {
+        return focusedConjunctionEvent;
+      }
+    }
+
+    if (meta.anomaly) {
+      return findConjunctionForSatellite($activeConjunctions, meta.satelliteNumber) ?? null;
+    }
+
+    return null;
+  }
+
+  function getTrajectoryCacheKey(meta, hours) {
+    return `${meta.satelliteNumber}:${meta.line1}:${meta.line2}:${hours}`;
+  }
+
+  function refreshTrajectoryEntityPositions() {
+    if (!viewer || !CesiumLib || !predictionTrajectories.length) {
+      return;
+    }
+
+    for (const entity of predictionTrajectories) {
+      const meta = tracked.find((item) => item.meta?.satelliteNumber === entity.__satelliteNumber)?.meta;
+      if (!meta) {
+        continue;
+      }
+
+      const positions = getCachedTrajectoryPositions(
+        meta,
+        trajectoryHours,
+        getTrajectoryConjunctionEvent(meta) ?? null
+      );
+      if (!positions) {
+        continue;
+      }
+
+      syncTrajectoryPositions(entity, positions);
+    }
+  }
+
+  function syncTrajectoryPositions(entity, nextPositions) {
+    if (!entity.__trajectoryPositions) {
+      entity.__trajectoryPositions = nextPositions.slice();
+      entity.polyline.positions = entity.__trajectoryPositions;
+      return;
+    }
+
+    entity.__trajectoryPositions.length = nextPositions.length;
+    for (let i = 0; i < nextPositions.length; i += 1) {
+      entity.__trajectoryPositions[i] = nextPositions[i];
+    }
+  }
+
+  function trajectoryWidth(meta) {
+    return meta.anomaly ? 2.6 : meta.satelliteNumber === selectedTrajectorySatelliteNumber ? 2.8 : 1.8;
+  }
+
+  function trajectoryMaterial(meta) {
+    return !meta.anomaly &&
+      trajectoryScope === 'selected' &&
+      meta.satelliteNumber === selectedTrajectorySatelliteNumber
+      ? new CesiumLib.PolylineDashMaterialProperty({
+          color: predictionColor(meta).withAlpha(0.88),
+          gapColor: CesiumLib.Color.TRANSPARENT,
+          dashLength: 18
+        })
+      : predictionColor(meta).withAlpha(
+          meta.satelliteNumber === selectedTrajectorySatelliteNumber ? 0.82 : 0.48
+        );
+  }
+
+  function getCachedTrajectoryPositions(meta, hours, conjunctionEvent = null) {
+    const trackedItem = tracked.find((item) => item.meta?.satelliteNumber === meta.satelliteNumber);
     if (!trackedItem) {
       return null;
     }
 
-    const start = new Date();
-    const steps = Math.max(24, Math.min(240, hours * 6));
+    const key = `${getTrajectoryCacheKey(meta, hours)}:${conjunctionEvent?.timeIso ?? 'none'}`;
+    const cached = trajectoryPositionCache.get(key);
+    const now = Date.now();
+
+    if (cached && now - cached.generatedAt < TRAJECTORY_CACHE_TTL_MS) {
+      return cached.positions;
+    }
+
+    const start = new Date(now);
+    const horizonEnd = now + hours * 60 * 60 * 1000;
+    const eventEnd = conjunctionEvent?.timeIso ? new Date(conjunctionEvent.timeIso).getTime() : NaN;
+    const effectiveEnd =
+      Number.isFinite(eventEnd) && eventEnd > now ? eventEnd : horizonEnd;
+    const durationMs = Math.max(60 * 1000, effectiveEnd - now);
+    const steps = Math.max(24, Math.min(240, Math.ceil(durationMs / (10 * 60 * 1000))));
     const positions = [];
 
     for (let step = 0; step <= steps; step += 1) {
-      const date = new Date(start.getTime() + (hours * 60 * 60 * 1000 * step) / steps);
+      const date = new Date(start.getTime() + (durationMs * step) / steps);
       const geo = propagateToGeodetic(trackedItem.satrec, date);
       if (!geo) {
         continue;
@@ -534,30 +731,72 @@
       positions.push(CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000));
     }
 
-    return positions.length ? positions : null;
+    if (!positions.length) {
+      return null;
+    }
+
+    if (conjunctionEvent) {
+      positions[positions.length - 1] = CesiumLib.Cartesian3.fromDegrees(
+        conjunctionEvent.markerLon,
+        conjunctionEvent.markerLat,
+        conjunctionEvent.markerAltKm * 1000
+      );
+    }
+
+    trajectoryPositionCache.set(key, {
+      generatedAt: now,
+      positions
+    });
+
+    return positions;
   }
 
-  function updateConjunctionMarker() {
+  function updateConjunctionSpots() {
     if (!viewer || !CesiumLib) return;
-    clearConjunctionMarker();
-    if (!selectedSat?.collisionTimeIso || !selectedSat?.collisionDistanceKm) {
+    clearConjunctionSpots();
+    if (showAnomalyTrajectoryLines) {
       return;
     }
 
-    const event = findConjunctionForSatellite($activeConjunctions, selectedSat.satelliteNumber);
+    conjunctionSpots = $activeConjunctions.map((event) => {
+      const entity = viewer.entities.add({
+        position: CesiumLib.Cartesian3.fromDegrees(
+          event.markerLon,
+          event.markerLat,
+          event.markerAltKm * 1000
+        ),
+        point: {
+          pixelSize: 10,
+          color: CesiumLib.Color.fromCssColorString('#e67e80'),
+          outlineColor: CesiumLib.Color.fromCssColorString('#f4f1de'),
+          outlineWidth: 2
+        }
+      });
+      entity.__conjunctionMarkerEntity = true;
+      entity.__conjunctionEvent = event;
+      return entity;
+    });
+  }
+
+  function updateFocusedConjunctionMarker() {
+    if (!viewer || !CesiumLib) return;
+    clearConjunctionMarkerLabels();
+
+    const event =
+      focusedConjunctionEvent ||
+      (selectedSat?.anomaly
+        ? findConjunctionForSatellite($activeConjunctions, selectedSat.satelliteNumber)
+        : null);
+
     if (!event) {
       return;
     }
 
-    const geo = propagateToGeodetic(
-      tracked.find((item) => item.meta?.satelliteNumber === selectedSat.satelliteNumber)?.satrec,
-      new Date(event.timeIso)
+    const basePosition = CesiumLib.Cartesian3.fromDegrees(
+      event.markerLon,
+      event.markerLat,
+      event.markerAltKm * 1000
     );
-    if (!geo) {
-      return;
-    }
-
-    const basePosition = CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000);
 
     conjunctionMarker = viewer.entities.add({
       position: basePosition,
@@ -588,7 +827,7 @@
     conjunctionRightLabel = viewer.entities.add({
       position: basePosition,
       label: {
-        text: new Date(event.timeIso).toLocaleString(),
+        text: `${new Date(event.timeIso).toLocaleString()} • ${event.markerLat.toFixed(2)}°, ${event.markerLon.toFixed(2)}°`,
         font: '12px sans-serif',
         fillColor: CesiumLib.Color.fromCssColorString('#f4f1de'),
         showBackground: true,
@@ -599,6 +838,27 @@
       }
     });
     conjunctionRightLabel.__conjunctionMarkerEntity = true;
+  }
+
+  async function loadEnrichedForSelected() {
+    enrichedFields = null;
+    enrichedError = '';
+    if (!selectedSat?.satelliteNumber) return;
+    try {
+      enrichedLoading = true;
+      const res = await fetch(`/api/enriched?satelliteNumber=${encodeURIComponent(selectedSat.satelliteNumber)}`, {
+        cache: 'no-store'
+      });
+      if (!res.ok) {
+        throw new Error(`Enriched data error: ${res.status}`);
+      }
+      const data = await res.json();
+      enrichedFields = Array.isArray(data?.fields) ? data.fields : [];
+    } catch (err) {
+      enrichedError = err instanceof Error ? err.message : 'Failed to load enriched data';
+    } finally {
+      enrichedLoading = false;
+    }
   }
 
   function predictionColor(meta = selectedSat) {
@@ -633,20 +893,38 @@
 
   $: if (viewer && CesiumLib) {
     showTrajectoryLines;
+    showAnomalyTrajectoryLines;
     trajectoryHours;
     trajectoryScope;
-    selectedSat?.name;
-    selectedSat?.line1;
-    selectedSat?.line2;
+    selectedTrajectorySatelliteNumber;
+    focusedConjunctionSatelliteNumbers.join('|');
     tracked.length;
     void loadPredictionTrajectories();
   }
 
+  $: if (!showAnomalyTrajectoryLines && focusedConjunctionSatelliteNumbers.length) {
+    if (!showTrajectoryLines) {
+      focusedConjunctionSatelliteNumbers = [];
+    }
+  }
+
+  $: if (viewer && CesiumLib) {
+    showAnomalyTrajectoryLines;
+    $activeConjunctions;
+    updateConjunctionSpots();
+  }
+
   $: if (viewer && CesiumLib) {
     selectedSat?.satelliteNumber;
-    selectedSat?.collisionTimeIso;
+    selectedSat?.anomaly;
+    focusedConjunctionEvent?.timeIso;
     $activeConjunctions;
-    updateConjunctionMarker();
+    updateFocusedConjunctionMarker();
+  }
+
+  $: if (viewer && CesiumLib) {
+    selectedSat?.satelliteNumber;
+    void loadEnrichedForSelected();
   }
 </script>
 
@@ -716,35 +994,37 @@
     {/if}
   </div>
 
-  <div class:controls-minimized={showTrajectoryLines && displayMinimized} class="controls glass fade-in">
+  <div class:controls-minimized={(showTrajectoryLines || showAnomalyTrajectoryLines) && displayMinimized} class="controls glass fade-in">
     <div class="controls-header">
       <div class="section-heading">Display</div>
-      {#if showTrajectoryLines}
+      {#if showTrajectoryLines || showAnomalyTrajectoryLines}
         <button class="panel-toggle btn secondary" on:click={() => (displayMinimized = !displayMinimized)}>
           {displayMinimized ? 'Expand' : 'Minimize'}
         </button>
       {/if}
     </div>
 
-    {#if !showTrajectoryLines || !displayMinimized}
-      <div class="panel-section">
-        <div class="control">
-          <div class="control-header">
-            <span>Satellites to view</span>
-            <strong>{renderedSatelliteCount}</strong>
-          </div>
-          <input
-            class="range"
-            type="range"
-            min="1"
-            max={Math.max(1, satelliteCount)}
-            step="1"
-            bind:value={displayCount}
-          />
-        </div>
-      </div>
-
+    {#if !(showTrajectoryLines || showAnomalyTrajectoryLines) || !displayMinimized}
       {#if showTrajectoryLines}
+        <div class="panel-section">
+          <div class="control">
+            <div class="control-header">
+              <span>Satellites to view</span>
+              <strong>{renderedSatelliteCount}</strong>
+            </div>
+            <input
+              class="range"
+              type="range"
+              min="1"
+              max={Math.max(1, satelliteCount)}
+              step="1"
+              bind:value={displayCount}
+            />
+          </div>
+        </div>
+      {/if}
+
+      {#if showTrajectoryLines || showAnomalyTrajectoryLines}
         <div class="panel-section">
           <div class="control">
             <div class="control-header">
@@ -791,6 +1071,7 @@
             </select>
           </label>
         {/if}
+        <label><input type="checkbox" bind:checked={showAnomalyTrajectoryLines} /> Anomaly trajectory lines</label>
       </div>
     </div>
   </div>
@@ -818,6 +1099,7 @@
         </button>
         <button class:active={infoTab === 'orbit'} on:click={() => (infoTab = 'orbit')}>Orbit</button>
         <button class:active={infoTab === 'risk'} on:click={() => (infoTab = 'risk')}>Risk</button>
+        <button class:active={infoTab === 'missions'} on:click={() => (infoTab = 'missions')}>Missions</button>
       </div>
 
       {#if infoTab === 'telemetry'}
@@ -859,6 +1141,22 @@
           <div><span class="label">Closest approach</span><strong>{selectedSat.collisionDistanceKm ? `${selectedSat.collisionDistanceKm} km` : 'None'}</strong></div>
           <div><span class="label">Expected time</span><strong>{selectedSat.collisionTimeIso ? new Date(selectedSat.collisionTimeIso).toLocaleString() : 'None'}</strong></div>
         </div>
+      {/if}
+
+      {#if infoTab === 'missions'}
+        {#if enrichedLoading}
+          <div class="label">Loading enriched fields…</div>
+        {:else if enrichedError}
+          <div class="error">{enrichedError}</div>
+        {:else if enrichedFields && enrichedFields.length}
+          <div class="info-grid">
+            {#each enrichedFields as field}
+              <div><span class="label">{field.label}</span><strong>{field.value}</strong></div>
+            {/each}
+          </div>
+        {:else}
+          <div class="label">No enriched fields found for this satellite.</div>
+        {/if}
       {/if}
       {/if}
 

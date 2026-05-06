@@ -4,10 +4,10 @@
 
   let { data, form }: { data: PageData; form: ActionData } = $props();
 
-  const directLogin = data.directLogin ?? false;
-  const error = form?.error ?? page.url.searchParams.get('error') ?? '';
-  const next = form?.next ?? data.next ?? page.url.searchParams.get('next') ?? '/dashboard';
-  const username = form?.username ?? '';
+  let directLogin = $derived(data.directLogin ?? false);
+  let error = $derived(form?.error ?? page.url.searchParams.get('error') ?? '');
+  let next = $derived(form?.next ?? data.next ?? page.url.searchParams.get('next') ?? '/dashboard');
+  let username = $derived(form?.username ?? '');
 </script>
 
 <svelte:head>
@@ -97,7 +97,7 @@
   }
 
   .utep-logo {
-    height: 38px;
+    height: 41px;
     width: auto;
   }
 

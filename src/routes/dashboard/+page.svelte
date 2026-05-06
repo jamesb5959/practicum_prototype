@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { browser } from '$app/environment';
   import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
   import {
@@ -25,6 +25,91 @@
   let collisionMenuOpen = false;
   let selectedHorizon = '24';
   let selectedThreshold = '10';
+
+  let detailsOpen = false;
+  let detailsItem = null;
+  let detailsRelatedConjunctions = [];
+  let detailsTab = 'summary';
+  let activeDetailsKey = '';
+  let detailsPlacement = null;
+
+  let detailsEnrichedFields = null;
+  let detailsEnrichedLoading = false;
+  let detailsEnrichedError = '';
+
+  let detailsPrimaryEnrichedFields = null;
+  let detailsPrimaryEnrichedLoading = false;
+  let detailsPrimaryEnrichedError = '';
+
+  let detailsSecondaryEnrichedFields = null;
+  let detailsSecondaryEnrichedLoading = false;
+  let detailsSecondaryEnrichedError = '';
+
+  let detailsRequestId = 0;
+
+  let summaryRequestId = 0;
+  const enrichedNameCache = new Map();
+
+  function normalizeSatelliteNumber(value) {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) return '';
+    const normalized = trimmed.replace(/^0+/, '');
+    return normalized || trimmed;
+  }
+
+  function formatSatelliteNumber(value) {
+    return normalizeSatelliteNumber(value);
+  }
+
+  function normalizeEnrichedLabel(label) {
+    return String(label ?? '').trim().toLowerCase();
+  }
+
+  function getEnrichedSatelliteNameFromFields(fields) {
+    if (!Array.isArray(fields)) return null;
+    const match = fields.find((field) => normalizeEnrichedLabel(field?.label) === 'satellite name');
+    const value = String(match?.value ?? '').trim();
+    return value || null;
+  }
+
+  function fallbackSatelliteName(satelliteNumber, tleName) {
+    const satNum = formatSatelliteNumber(satelliteNumber);
+    const raw = String(tleName ?? '').replace(/^0\s+/, '').trim();
+
+    if (raw) {
+      const withoutNoradAndNum = satNum
+        ? raw.replace(new RegExp(`^NORAD\\s+0*${satNum}\\s*\\|\\s*`, 'i'), '')
+        : raw.replace(/^NORAD\s+\d+\s*\|\s*/i, '');
+      const withoutNorad = withoutNoradAndNum.replace(/^NORAD\s+/i, '').trim();
+      if (withoutNorad) return withoutNorad;
+    }
+
+    return satNum ? `Satellite ${satNum}` : 'Satellite';
+  }
+
+  function formatLatLon(lat, lon) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return 'Lat —°, Lon —°';
+    }
+    return `Lat ${Number(lat).toFixed(2)}°, Lon ${Number(lon).toFixed(2)}°`;
+  }
+
+  async function getEnrichedSatelliteName(satelliteNumber) {
+    const key = normalizeSatelliteNumber(satelliteNumber);
+    if (!key) return null;
+    if (enrichedNameCache.has(key)) return enrichedNameCache.get(key);
+
+    try {
+      const fields = await fetchEnrichedFields(
+        `/api/enriched?satelliteNumber=${encodeURIComponent(key)}`
+      );
+      const name = getEnrichedSatelliteNameFromFields(fields);
+      enrichedNameCache.set(key, name);
+      return name;
+    } catch {
+      return null;
+    }
+  }
 
   onMount(async () => {
     if (!browser) return;
@@ -83,22 +168,43 @@
   async function loadSummary() {
     loading = true;
     error = '';
+    const requestId = (summaryRequestId += 1);
 
     try {
       const { activeText, debrisText, source } = await fetchActiveAndDebrisTle();
+      if (requestId !== summaryRequestId) return;
       const activeSats = parseTle(activeText);
       const debrisSats = parseTle(debrisText);
       const conjunctions = await refreshConjunctions(activeSats);
+      if (requestId !== summaryRequestId) return;
 
       activeCount = activeSats.length;
       debrisCount = debrisSats.length;
       dataSource = source;
       lastUpdated = new Date().toLocaleString();
 
-      operational = activeSats.slice(0, 6).map((sat) => ({
-        name: sat.name,
-        status: 'tracked'
-      }));
+      const operationalBase = activeSats.slice(0, 6).map((sat) => {
+        const geo = propagateToGeodetic(sat.satrec, new Date());
+        const altKm = geo ? Math.round(geo.altKm) : null;
+        const orbitBand =
+          altKm == null
+            ? '—'
+            : altKm <= 2000
+              ? 'LEO'
+              : altKm <= 35786
+                ? 'MEO'
+                : 'GEO';
+
+        return {
+          kind: 'satellite',
+          context: 'operational',
+          name: fallbackSatelliteName(sat.fields?.satelliteNumber, sat.name),
+          satelliteNumber: sat.fields?.satelliteNumber,
+          status: 'tracked',
+          orbitBand,
+          altKm
+        };
+      });
 
       const orbitCounts = activeSats.reduce(
         (acc, sat) => {
@@ -112,33 +218,86 @@
         { leo: 0, meo: 0, geo: 0 }
       );
 
-      attention = [
+      const attentionBase = [
         ...conjunctions.slice(0, 4).map((event) => ({
-          name: `${event.primarySatelliteNumber} / ${event.secondarySatelliteNumber}`,
+          kind: 'conjunction',
+          name: `#${formatSatelliteNumber(event.primarySatelliteNumber)} / #${formatSatelliteNumber(event.secondarySatelliteNumber)}`,
           status: 'critical',
-          issue: `${event.distanceKm.toFixed(2)} km at ${new Date(event.timeIso).toLocaleString()}`
+          issue: `#${formatSatelliteNumber(event.primarySatelliteNumber)} / #${formatSatelliteNumber(event.secondarySatelliteNumber)} • ${event.distanceKm.toFixed(2)} km @ ${new Date(event.timeIso).toLocaleString()} • ${formatLatLon(event.markerLat, event.markerLon)}`,
+          primarySatelliteNumber: event.primarySatelliteNumber,
+          secondarySatelliteNumber: event.secondarySatelliteNumber,
+          primaryName: fallbackSatelliteName(event.primarySatelliteNumber, event.primaryName),
+          secondaryName: fallbackSatelliteName(event.secondarySatelliteNumber, event.secondaryName),
+          distanceKm: event.distanceKm,
+          timeIso: event.timeIso,
+          markerLat: event.markerLat,
+          markerLon: event.markerLon,
+          markerAltKm: event.markerAltKm
         })),
         {
+          kind: 'stat',
           name: 'LEO Objects',
           status: 'tracked',
           issue: `${orbitCounts.leo} tracked in LEO`
         },
         {
+          kind: 'stat',
           name: 'MEO Objects',
           status: 'tracked',
           issue: `${orbitCounts.meo} tracked in MEO`
         },
         {
+          kind: 'stat',
           name: 'GEO Objects',
           status: 'tracked',
           issue: `${orbitCounts.geo} tracked in GEO`
         },
         {
+          kind: 'stat',
           name: 'Loaded Set',
           status: 'tracked',
           issue: `${activeCount} Warpcore objects available`
         }
       ];
+
+      const [operationalEnriched, attentionEnriched] = await Promise.all([
+        Promise.all(
+          operationalBase.map(async (item) => {
+            const enrichedName = await getEnrichedSatelliteName(item.satelliteNumber);
+            return {
+              ...item,
+              name: enrichedName || item.name
+            };
+          })
+        ),
+        Promise.all(
+          attentionBase.map(async (item) => {
+            if (item?.kind !== 'conjunction') return item;
+
+            const [primaryName, secondaryName] = await Promise.all([
+              getEnrichedSatelliteName(item.primarySatelliteNumber),
+              getEnrichedSatelliteName(item.secondarySatelliteNumber)
+            ]);
+
+            const primaryDisplay =
+              primaryName || item.primaryName || `#${formatSatelliteNumber(item.primarySatelliteNumber)}`;
+            const secondaryDisplay =
+              secondaryName || item.secondaryName || `#${formatSatelliteNumber(item.secondarySatelliteNumber)}`;
+
+            return {
+              ...item,
+              name: `${primaryDisplay} / ${secondaryDisplay}`,
+              primaryName: primaryDisplay,
+              secondaryName: secondaryDisplay,
+              issue: `#${formatSatelliteNumber(item.primarySatelliteNumber)} / #${formatSatelliteNumber(item.secondarySatelliteNumber)} • ${item.distanceKm.toFixed(2)} km @ ${new Date(item.timeIso).toLocaleString()} • ${formatLatLon(item.markerLat, item.markerLon)}`
+            };
+          })
+        )
+      ]);
+
+      if (requestId !== summaryRequestId) return;
+      operational = operationalEnriched;
+      attention = attentionEnriched;
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load data.';
       if (!lastUpdated) {
@@ -184,8 +343,191 @@
     }
   }
 
+  function closeDetails() {
+    detailsOpen = false;
+    detailsItem = null;
+    activeDetailsKey = '';
+    detailsPlacement = null;
+    detailsTab = 'summary';
+    detailsEnrichedFields = null;
+    detailsEnrichedError = '';
+    detailsEnrichedLoading = false;
+    detailsPrimaryEnrichedFields = null;
+    detailsPrimaryEnrichedError = '';
+    detailsPrimaryEnrichedLoading = false;
+    detailsSecondaryEnrichedFields = null;
+    detailsSecondaryEnrichedError = '';
+    detailsSecondaryEnrichedLoading = false;
+  }
+
+  function getDetailsKey(item) {
+    if (!item) return '';
+    if (item.kind === 'satellite') {
+      return `sat:${normalizeSatelliteNumber(item.satelliteNumber)}`;
+    }
+    if (item.kind === 'conjunction') {
+      return `conj:${normalizeSatelliteNumber(item.primarySatelliteNumber)}:${normalizeSatelliteNumber(item.secondarySatelliteNumber)}:${item.timeIso}`;
+    }
+    return `${item.kind || 'item'}:${item.name || ''}:${item.issue || ''}`;
+  }
+
+  function handleCardKeydown(event, item, column, index) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      void openDetails(item, column, index);
+    }
+  }
+
+  function isDetailsItem(column, index) {
+    return Boolean(
+      detailsOpen &&
+        detailsPlacement &&
+        detailsPlacement.column === column &&
+        detailsPlacement.index === index
+    );
+  }
+
+  async function fetchEnrichedFields(url) {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(`Enriched data error: ${res.status}`);
+    }
+    const data = await res.json();
+    return Array.isArray(data?.fields) ? data.fields : [];
+  }
+
+  async function openDetails(item, column, index) {
+    if (!browser) return;
+    const nextKey = getDetailsKey(item);
+    if (
+      detailsOpen &&
+      activeDetailsKey === nextKey &&
+      detailsPlacement?.column === column &&
+      detailsPlacement?.index === index
+    ) {
+      closeDetails();
+      return;
+    }
+    if (detailsOpen) {
+      closeDetails();
+      await tick();
+    }
+    collisionMenuOpen = false;
+    detailsItem = item;
+    activeDetailsKey = nextKey;
+    detailsPlacement = { column, index };
+    detailsOpen = true;
+    detailsTab = 'summary';
+
+    detailsEnrichedFields = null;
+    detailsEnrichedError = '';
+    detailsEnrichedLoading = false;
+
+    detailsPrimaryEnrichedFields = null;
+    detailsPrimaryEnrichedError = '';
+    detailsPrimaryEnrichedLoading = false;
+
+    detailsSecondaryEnrichedFields = null;
+    detailsSecondaryEnrichedError = '';
+    detailsSecondaryEnrichedLoading = false;
+
+    const requestId = (detailsRequestId += 1);
+
+    try {
+      if (item?.kind === 'satellite') {
+        const satNum = item.satelliteNumber;
+        if (!satNum) return;
+        detailsEnrichedLoading = true;
+        const fields = await fetchEnrichedFields(
+          `/api/enriched?satelliteNumber=${encodeURIComponent(satNum)}`
+        );
+        if (requestId !== detailsRequestId) return;
+        detailsEnrichedFields = fields;
+
+        const enrichedName = getEnrichedSatelliteNameFromFields(fields);
+        const cacheKey = normalizeSatelliteNumber(satNum);
+        if (cacheKey) enrichedNameCache.set(cacheKey, enrichedName);
+        if (enrichedName) {
+          detailsItem = { ...detailsItem, name: enrichedName };
+        }
+      }
+
+      if (item?.kind === 'conjunction') {
+        const primaryNum = item.primarySatelliteNumber;
+        const secondaryNum = item.secondarySatelliteNumber;
+        detailsPrimaryEnrichedLoading = Boolean(primaryNum);
+        detailsSecondaryEnrichedLoading = Boolean(secondaryNum);
+
+        await Promise.all([
+          (async () => {
+            if (!primaryNum) return;
+            try {
+              const fields = await fetchEnrichedFields(
+                `/api/enriched?satelliteNumber=${encodeURIComponent(primaryNum)}`
+              );
+              if (requestId !== detailsRequestId) return;
+              detailsPrimaryEnrichedFields = fields;
+
+              const enrichedName = getEnrichedSatelliteNameFromFields(fields);
+              const cacheKey = normalizeSatelliteNumber(primaryNum);
+              if (cacheKey) enrichedNameCache.set(cacheKey, enrichedName);
+              if (enrichedName) {
+                detailsItem = { ...detailsItem, primaryName: enrichedName };
+              }
+            } catch (err) {
+              if (requestId !== detailsRequestId) return;
+              detailsPrimaryEnrichedError = err instanceof Error ? err.message : 'Failed to load enriched data';
+            } finally {
+              if (requestId === detailsRequestId) detailsPrimaryEnrichedLoading = false;
+            }
+          })(),
+          (async () => {
+            if (!secondaryNum) return;
+            try {
+              const fields = await fetchEnrichedFields(
+                `/api/enriched?satelliteNumber=${encodeURIComponent(secondaryNum)}`
+              );
+              if (requestId !== detailsRequestId) return;
+              detailsSecondaryEnrichedFields = fields;
+
+              const enrichedName = getEnrichedSatelliteNameFromFields(fields);
+              const cacheKey = normalizeSatelliteNumber(secondaryNum);
+              if (cacheKey) enrichedNameCache.set(cacheKey, enrichedName);
+              if (enrichedName) {
+                detailsItem = { ...detailsItem, secondaryName: enrichedName };
+              }
+            } catch (err) {
+              if (requestId !== detailsRequestId) return;
+              detailsSecondaryEnrichedError = err instanceof Error ? err.message : 'Failed to load enriched data';
+            } finally {
+              if (requestId === detailsRequestId) detailsSecondaryEnrichedLoading = false;
+            }
+          })()
+        ]);
+      }
+    } catch (err) {
+      if (requestId !== detailsRequestId) return;
+      detailsEnrichedError = err instanceof Error ? err.message : 'Failed to load enriched data';
+    } finally {
+      if (requestId === detailsRequestId) {
+        detailsEnrichedLoading = false;
+      }
+    }
+  }
+
   $: selectedHorizon = String($collisionConfig.horizonHours);
   $: selectedThreshold = String($collisionConfig.thresholdKm);
+
+  $: detailsRelatedConjunctions =
+    detailsItem?.kind === 'satellite' && detailsItem?.satelliteNumber
+      ? $activeConjunctions
+          .filter(
+            (event) =>
+              event.primarySatelliteNumber === detailsItem.satelliteNumber ||
+              event.secondarySatelliteNumber === detailsItem.satelliteNumber
+          )
+          .slice(0, 6)
+      : [];
 </script>
 
 <svelte:head>
@@ -323,12 +665,86 @@
         <h3>Operational Systems</h3>
       </div>
       {#if operational.length}
-        {#each operational as sat}
-          <article class="sat-card">
+        {#each operational as sat, index}
+          <button
+            class:selected-card={isDetailsItem('operational', index)}
+            class="sat-card"
+            aria-haspopup="dialog"
+            on:click={() => openDetails(sat, 'operational', index)}
+            on:keydown={(event) => handleCardKeydown(event, sat, 'operational', index)}
+            type="button"
+          >
             <span class="status-dot operational-dot"></span>
-            <span class="sat-name">{sat.name}</span>
+            <div class="sat-info">
+              <strong class="sat-name">{sat.name}</strong>
+              {#if sat.satelliteNumber}
+                <span class="issue">#{formatSatelliteNumber(sat.satelliteNumber)}</span>
+              {/if}
+            </div>
             <span class="badge operational-badge">TRACKED</span>
-          </article>
+          </button>
+          {#if detailsOpen && isDetailsItem('operational', index)}
+            <section class="details-panel details-inline glass fade-in" aria-label="Expanded satellite details">
+              <div class="details-panel-header">
+                <div class="details-header-copy">
+                  <span class="eyebrow">Operational System</span>
+                  <h2>{detailsItem.name}</h2>
+                  <span class="label">#{formatSatelliteNumber(detailsItem.satelliteNumber)}</span>
+                </div>
+              </div>
+
+              <div class="details-tabs">
+                <button class:active={detailsTab === 'summary'} on:click={() => (detailsTab = 'summary')}>Summary</button>
+                <button class:active={detailsTab === 'issues'} on:click={() => (detailsTab = 'issues')}>Issues</button>
+                <button class:active={detailsTab === 'missions'} on:click={() => (detailsTab = 'missions')}>Missions</button>
+              </div>
+
+              {#if detailsTab === 'summary'}
+                <div class="summary-grid details-grid">
+                  <div><span class="label">Status</span><strong>{detailsItem.status ? detailsItem.status.toUpperCase() : 'TRACKED'}</strong></div>
+                  {#if detailsItem.orbitBand && detailsItem.orbitBand !== '—'}
+                    <div><span class="label">Orbit band</span><strong>{detailsItem.orbitBand}</strong></div>
+                  {/if}
+                  {#if detailsItem.altKm !== null && detailsItem.altKm !== undefined}
+                    <div><span class="label">Altitude</span><strong>{detailsItem.altKm} km</strong></div>
+                  {/if}
+                  <div><span class="label">Screening window</span><strong>{$collisionConfig.horizonHours}h / {$collisionConfig.thresholdKm} km</strong></div>
+                </div>
+              {:else if detailsTab === 'issues'}
+                <div class="details-section">
+                  <span class="eyebrow">Detected Conjunctions</span>
+                  {#if detailsRelatedConjunctions.length}
+                    {#each detailsRelatedConjunctions as event}
+                      <div class="details-issue-row">
+                        <strong>{event.distanceKm.toFixed(2)} km</strong>
+                        <span class="issue">{new Date(event.timeIso).toLocaleString()}</span>
+                        <span class="label">#{formatSatelliteNumber(event.primarySatelliteNumber)} / #{formatSatelliteNumber(event.secondarySatelliteNumber)} • {formatLatLon(event.markerLat, event.markerLon)}</span>
+                      </div>
+                    {/each}
+                  {:else}
+                    <div class="label">No conjunctions detected for this satellite.</div>
+                  {/if}
+                </div>
+              {:else}
+                <div class="details-section">
+                  <span class="eyebrow">Mission Fields</span>
+                  {#if detailsEnrichedLoading}
+                    <div class="label">Loading enriched fields...</div>
+                  {:else if detailsEnrichedError}
+                    <div class="error">{detailsEnrichedError}</div>
+                  {:else if detailsEnrichedFields && detailsEnrichedFields.length}
+                    <div class="summary-grid details-fields">
+                      {#each detailsEnrichedFields as field}
+                        <div><span class="label">{field.label}</span><strong>{field.value}</strong></div>
+                      {/each}
+                    </div>
+                  {:else}
+                    <div class="label">No enriched fields found for this satellite.</div>
+                  {/if}
+                </div>
+              {/if}
+            </section>
+          {/if}
         {/each}
       {:else}
         <p class="empty">No active systems available.</p>
@@ -341,15 +757,96 @@
         <h3>Catalog Highlights</h3>
       </div>
       {#if attention.length}
-        {#each attention as sat}
-          <article class="sat-card">
+        {#each attention as sat, index}
+          <button
+            class:selected-card={isDetailsItem('attention', index)}
+            class="sat-card"
+            aria-haspopup="dialog"
+            on:click={() => openDetails(sat, 'attention', index)}
+            on:keydown={(event) => handleCardKeydown(event, sat, 'attention', index)}
+            type="button"
+          >
             <span class="status-dot {sat.status}-dot"></span>
             <div class="sat-info">
               <strong class="sat-name">{sat.name}</strong>
               <span class="issue">{sat.issue}</span>
             </div>
             <span class="badge {sat.status}-badge">{sat.status.toUpperCase()}</span>
-          </article>
+          </button>
+          {#if detailsOpen && isDetailsItem('attention', index)}
+            <section class="details-panel details-inline glass fade-in" aria-label="Expanded attention details">
+              <div class="details-panel-header">
+                <div class="details-header-copy">
+                  <span class="eyebrow">{detailsItem.kind === 'conjunction' ? 'Conjunction Alert' : 'Catalog Highlight'}</span>
+                  <h2>
+                    {detailsItem.kind === 'conjunction'
+                      ? `${detailsItem.primaryName || `#${formatSatelliteNumber(detailsItem.primarySatelliteNumber)}`} / ${detailsItem.secondaryName || `#${formatSatelliteNumber(detailsItem.secondarySatelliteNumber)}`}`
+                      : detailsItem.name}
+                  </h2>
+                </div>
+              </div>
+
+              {#if detailsItem.kind === 'conjunction'}
+                <div class="details-tabs">
+                  <button class:active={detailsTab === 'summary'} on:click={() => (detailsTab = 'summary')}>Summary</button>
+                  <button class:active={detailsTab === 'primary'} on:click={() => (detailsTab = 'primary')}>Satellite 1</button>
+                  <button class:active={detailsTab === 'secondary'} on:click={() => (detailsTab = 'secondary')}>Satellite 2</button>
+                </div>
+
+                {#if detailsTab === 'summary'}
+                  <div class="summary-grid details-grid">
+                    <div><span class="label">Satellite 1</span><strong>{detailsItem.primaryName}</strong></div>
+                    <div><span class="label">Satellite 2</span><strong>{detailsItem.secondaryName}</strong></div>
+                    <div><span class="label">Closest approach</span><strong>{detailsItem.distanceKm.toFixed(2)} km</strong></div>
+                    <div><span class="label">Expected time</span><strong>{new Date(detailsItem.timeIso).toLocaleString()}</strong></div>
+                    <div><span class="label">Location</span><strong>{formatLatLon(detailsItem.markerLat, detailsItem.markerLon)}</strong></div>
+                  </div>
+                {:else if detailsTab === 'primary'}
+                  <div class="details-section">
+                    <span class="eyebrow">Satellite 1</span>
+                    {#if detailsPrimaryEnrichedLoading}
+                      <div class="label">Loading enriched fields...</div>
+                    {:else if detailsPrimaryEnrichedError}
+                      <div class="error">{detailsPrimaryEnrichedError}</div>
+                    {:else if detailsPrimaryEnrichedFields && detailsPrimaryEnrichedFields.length}
+                      <div class="summary-grid details-fields">
+                        {#each detailsPrimaryEnrichedFields as field}
+                          <div><span class="label">{field.label}</span><strong>{field.value}</strong></div>
+                        {/each}
+                      </div>
+                    {:else}
+                      <div class="label">No enriched fields found for the primary satellite.</div>
+                    {/if}
+                  </div>
+                {:else}
+                  <div class="details-section">
+                    <span class="eyebrow">Satellite 2</span>
+                    {#if detailsSecondaryEnrichedLoading}
+                      <div class="label">Loading enriched fields...</div>
+                    {:else if detailsSecondaryEnrichedError}
+                      <div class="error">{detailsSecondaryEnrichedError}</div>
+                    {:else if detailsSecondaryEnrichedFields && detailsSecondaryEnrichedFields.length}
+                      <div class="summary-grid details-fields">
+                        {#each detailsSecondaryEnrichedFields as field}
+                          <div><span class="label">{field.label}</span><strong>{field.value}</strong></div>
+                        {/each}
+                      </div>
+                    {:else}
+                      <div class="label">No enriched fields found for the secondary satellite.</div>
+                    {/if}
+                  </div>
+                {/if}
+              {:else}
+                <div class="details-tabs">
+                  <button class:active={detailsTab === 'summary'} on:click={() => (detailsTab = 'summary')}>Summary</button>
+                </div>
+                <div class="details-section">
+                  <span class="eyebrow">Details</span>
+                  <div class="label">{detailsItem.issue || 'No additional details available.'}</div>
+                </div>
+              {/if}
+            </section>
+          {/if}
         {/each}
       {:else}
         <p class="empty">No alerts right now.</p>
@@ -414,7 +911,7 @@
   }
 
   .utep-logo {
-    height: 48px;
+    height: 52px;
     width: auto;
   }
 
@@ -621,21 +1118,115 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    width: 100%;
     padding: 12px;
     margin-bottom: 8px;
     border-radius: 10px;
     border: 1px solid var(--border);
     background: rgba(24, 29, 31, 0.62);
+    color: var(--fg);
+    text-align: left;
+    cursor: pointer;
     transition:
       transform 160ms ease,
       border-color 160ms ease,
       background-color 160ms ease;
   }
 
+  .details-panel {
+    border-radius: 16px;
+    padding: 20px;
+    display: grid;
+    gap: 14px;
+    animation: panel-rise 220ms ease;
+    border: 1px solid rgba(127, 187, 179, 0.18);
+    box-shadow: 0 18px 40px rgba(8, 10, 10, 0.18);
+  }
+
+  .details-inline {
+    margin: -2px 0 12px;
+  }
+
+  .details-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(157, 169, 160, 0.12);
+  }
+
+  .details-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 2px;
+    border: 1px solid rgba(157, 169, 160, 0.12);
+    border-radius: 10px;
+    background: rgba(24, 29, 31, 0.42);
+    width: fit-content;
+  }
+
+  .details-tabs button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    line-height: 1;
+    min-height: 28px;
+    cursor: pointer;
+  }
+
+  .details-tabs button.active {
+    background: rgba(167, 192, 128, 0.16);
+    color: var(--fg);
+  }
+
+  .details-panel h2,
+  .details-panel strong {
+    color: var(--fg);
+  }
+
+  .details-header-copy {
+    display: grid;
+    gap: 2px;
+  }
+
+  .details-section {
+    display: grid;
+    gap: 10px;
+  }
+
+  .details-grid {
+    margin-top: 4px;
+  }
+
+  .details-fields {
+    max-height: 280px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+
+  .details-issue-row {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(24, 29, 31, 0.62);
+    display: grid;
+    gap: 2px;
+  }
+
   .sat-card:hover {
     transform: translateY(-1px);
     border-color: rgba(127, 187, 179, 0.22);
     background: rgba(28, 34, 36, 0.82);
+  }
+
+  .selected-card {
+    border-color: rgba(127, 187, 179, 0.38);
+    background: rgba(31, 40, 39, 0.96);
+    box-shadow: inset 0 0 0 1px rgba(127, 187, 179, 0.12);
   }
 
   .sat-info {
@@ -806,7 +1397,7 @@
     }
 
     .utep-logo {
-      height: 68px;
+      height: 74px;
     }
 
     .space-force-logo {

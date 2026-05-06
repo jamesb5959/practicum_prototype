@@ -50,8 +50,8 @@ if (-not (Test-Path ".env.docker")) {
 
 $dockerEnvText = Get-Content ".env.docker" -Raw
 if ($dockerEnvText -notmatch "(?m)^KEYCLOAK_DIRECT_LOGIN=") {
-  Write-Host "Adding KEYCLOAK_DIRECT_LOGIN=true to .env.docker..."
-  Add-Content ".env.docker" "`nKEYCLOAK_DIRECT_LOGIN=true"
+  Write-Host "Adding KEYCLOAK_DIRECT_LOGIN=false to .env.docker..."
+  Add-Content ".env.docker" "`nKEYCLOAK_DIRECT_LOGIN=false"
 }
 
 if (-not (Test-Path "keycloak-server/.env")) {
