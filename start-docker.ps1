@@ -2,13 +2,15 @@ param(
   [ValidateSet("up", "down", "reset")]
   [string]$Action,
   [ValidateSet("cpu", "gpu")]
-  [string]$Mode = "cpu"
+  [string]$Mode = "cpu",
+  [ValidateSet("normal", "performance")]
+  [string]$Profile = "normal"
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not $Action) {
-  Write-Host "Usage: .\start-docker.ps1 {up|down|reset} [cpu|gpu]"
+  Write-Host "Usage: .\start-docker.ps1 {up|down|reset} [cpu|gpu] [normal|performance]"
   Write-Host "  up    -> start app, Keycloak, and Postgres"
   Write-Host "  down  -> stop containers"
   Write-Host "  reset -> stop containers and remove volumes"
@@ -77,6 +79,31 @@ function Check-PortConflict {
   }
 }
 
+function Set-EnvKey {
+  param(
+    [string]$Path,
+    [string]$Key,
+    [string]$Value
+  )
+
+  $content = if (Test-Path $Path) { Get-Content $Path } else { @() }
+  $updated = $false
+  $next = foreach ($line in $content) {
+    if ($line -match "^$Key=") {
+      $updated = $true
+      "$Key=$Value"
+    } else {
+      $line
+    }
+  }
+
+  if (-not $updated) {
+    $next += "$Key=$Value"
+  }
+
+  Set-Content -Path $Path -Value $next
+}
+
 Ensure-EnvFiles
 
 if ($Mode -eq "gpu") {
@@ -88,6 +115,13 @@ if ($Mode -eq "gpu") {
 switch ($Action) {
   "up" {
     Check-PortConflict
+    if ($Profile -eq "performance") {
+      Set-EnvKey -Path ".env.docker" -Key "PUBLIC_DEMO_PERFORMANCE_MODE" -Value "true"
+      Write-Host "Demo performance mode enabled."
+    } else {
+      Set-EnvKey -Path ".env.docker" -Key "PUBLIC_DEMO_PERFORMANCE_MODE" -Value "false"
+    }
+    Ensure-EnvFiles
     if ($Mode -eq "gpu") {
       Write-Host "GPU Docker mode enabled."
     }

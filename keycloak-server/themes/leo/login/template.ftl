@@ -38,7 +38,9 @@
         </#list>
     </#if>
     <title>${msg("loginTitle",(realm.displayName!''))}</title>
-    <link rel="icon" href="${url.resourcesPath}/img/space-force.png?v=2" />
+    <link rel="icon" href="${url.resourcesPath}/img/favicon.ico?v=4" />
+    <link rel="shortcut icon" href="${url.resourcesPath}/img/favicon.ico?v=4" />
+    <link rel="apple-touch-icon" href="${url.resourcesPath}/img/space-force.png?v=4" />
     <#if properties.stylesCommon?has_content>
         <#list properties.stylesCommon?split(' ') as style>
             <link href="${url.resourcesCommonPath}/${style}" rel="stylesheet" />

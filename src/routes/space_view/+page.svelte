@@ -35,6 +35,7 @@
   let trajectoryRefreshTimer;
   const TRAJECTORY_CACHE_TTL_MS = 60 * 1000;
   const trajectoryPositionCache = new Map();
+  let performanceMode = false;
 
   let allSatellites = [];
   let tracked = [];
@@ -98,6 +99,7 @@
 
   onMount(async () => {
     if (!browser) return;
+    await loadRuntimeConfig();
     initCollisionConfig();
 
     try {
@@ -145,8 +147,8 @@
       return;
     }
 
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.fog.enabled = true;
+    viewer.scene.globe.enableLighting = !performanceMode;
+    viewer.scene.fog.enabled = !performanceMode;
     viewer.scene.globe.show = true;
     viewer.scene.screenSpaceCameraController.minimumZoomDistance = 120000;
     viewer.scene.screenSpaceCameraController.maximumZoomDistance = 25000000;
@@ -220,6 +222,21 @@
       void loadPredictionTrajectories();
     }, TRAJECTORY_CACHE_TTL_MS);
   });
+
+  async function loadRuntimeConfig() {
+    try {
+      const response = await fetch('/api/runtime-config');
+      if (!response.ok) {
+        return;
+      }
+      const config = await response.json();
+      performanceMode = config?.demoPerformanceMode === true;
+      displayCount = performanceMode ? 6 : 10;
+    } catch {
+      performanceMode = false;
+      displayCount = 10;
+    }
+  }
 
   function loadTexture(url) {
     return new Promise((resolve, reject) => {
@@ -719,7 +736,12 @@
     const effectiveEnd =
       Number.isFinite(eventEnd) && eventEnd > now ? eventEnd : horizonEnd;
     const durationMs = Math.max(60 * 1000, effectiveEnd - now);
-    const steps = Math.max(24, Math.min(240, Math.ceil(durationMs / (10 * 60 * 1000))));
+    const preserveCollisionFidelity = Boolean(conjunctionEvent || meta.anomaly);
+    const sampleDivisorMs =
+      performanceMode && !preserveCollisionFidelity ? 20 * 60 * 1000 : 10 * 60 * 1000;
+    const minSteps = performanceMode && !preserveCollisionFidelity ? 12 : 24;
+    const maxSteps = performanceMode && !preserveCollisionFidelity ? 120 : 240;
+    const steps = Math.max(minSteps, Math.min(maxSteps, Math.ceil(durationMs / sampleDivisorMs)));
     const positions = [];
 
     for (let step = 0; step <= steps; step += 1) {
