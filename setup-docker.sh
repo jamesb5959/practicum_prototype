@@ -59,8 +59,8 @@ if [ ! -f ".env.docker" ]; then
 fi
 
 if ! grep -q '^KEYCLOAK_DIRECT_LOGIN=' .env.docker; then
-  echo "Adding KEYCLOAK_DIRECT_LOGIN=true to .env.docker..."
-  printf '\nKEYCLOAK_DIRECT_LOGIN=true\n' >> .env.docker
+  echo "Adding KEYCLOAK_DIRECT_LOGIN=false to .env.docker..."
+  printf '\nKEYCLOAK_DIRECT_LOGIN=false\n' >> .env.docker
 fi
 
 if [ ! -f "keycloak-server/.env" ]; then
