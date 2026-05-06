@@ -49,7 +49,7 @@
 
   let summaryRequestId = 0;
   const enrichedNameCache = new Map();
-  const PERFORMANCE_MODE = import.meta.env.PUBLIC_DEMO_PERFORMANCE_MODE === 'true';
+  let performanceMode = false;
 
   function normalizeSatelliteNumber(value) {
     const trimmed = String(value ?? '').trim();
@@ -114,6 +114,7 @@
 
   onMount(async () => {
     if (!browser) return;
+    await loadRuntimeConfig();
     initCollisionConfig();
 
     await Promise.all([initMiniGlobe(), loadSummary()]);
@@ -153,7 +154,7 @@
       });
 
       viewer.scene.screenSpaceCameraController.enableInputs = false;
-      viewer.scene.globe.enableLighting = !PERFORMANCE_MODE;
+      viewer.scene.globe.enableLighting = !performanceMode;
       viewer.scene.fog.enabled = false;
       viewer.scene.backgroundColor = CesiumLib.Color.fromCssColorString('#1e2326');
       viewer.cesiumWidget.creditContainer.style.display = 'none';
@@ -163,6 +164,19 @@
       });
     } catch (err) {
       error = err instanceof Error ? `Cesium init failed: ${err.message}` : 'Cesium init failed.';
+    }
+  }
+
+  async function loadRuntimeConfig() {
+    try {
+      const response = await fetch('/api/runtime-config');
+      if (!response.ok) {
+        return;
+      }
+      const config = await response.json();
+      performanceMode = config?.demoPerformanceMode === true;
+    } catch {
+      performanceMode = false;
     }
   }
 
