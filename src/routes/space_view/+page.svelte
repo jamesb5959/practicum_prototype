@@ -3,6 +3,7 @@
   import { browser } from '$app/environment';
   import { activeClassification } from '$lib/classification';
   import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
+  import * as satellite from 'satellite.js';
   import {
     activeConjunctions,
     initCollisionConfig,
@@ -35,6 +36,7 @@
   let trajectoryRefreshTimer;
   const TRAJECTORY_CACHE_TTL_MS = 60 * 1000;
   const trajectoryPositionCache = new Map();
+  const pendingTrajectoryRequests = new Map();
   let performanceMode = false;
 
   let allSatellites = [];
@@ -321,7 +323,7 @@
     }
     if (predictionTrajectories.length) {
       clearTrajectoryCache();
-      refreshTrajectoryEntityPositions();
+      void refreshTrajectoryEntityPositions();
     }
   }
 
@@ -480,6 +482,7 @@
 
   function clearTrajectoryCache() {
     trajectoryPositionCache.clear();
+    pendingTrajectoryRequests.clear();
   }
 
   function clearConjunctionSpots() {
@@ -590,7 +593,7 @@
       const entities = [];
 
       for (const meta of targets) {
-        const positions = getCachedTrajectoryPositions(
+        const positions = await getCachedTrajectoryPositions(
           meta,
           trajectoryHours,
           getTrajectoryConjunctionEvent(meta) ?? null
@@ -661,7 +664,7 @@
     return `${meta.satelliteNumber}:${meta.line1}:${meta.line2}:${hours}`;
   }
 
-  function refreshTrajectoryEntityPositions() {
+  async function refreshTrajectoryEntityPositions() {
     if (!viewer || !CesiumLib || !predictionTrajectories.length) {
       return;
     }
@@ -672,7 +675,7 @@
         continue;
       }
 
-      const positions = getCachedTrajectoryPositions(
+      const positions = await getCachedTrajectoryPositions(
         meta,
         trajectoryHours,
         getTrajectoryConjunctionEvent(meta) ?? null
@@ -716,12 +719,7 @@
         );
   }
 
-  function getCachedTrajectoryPositions(meta, hours, conjunctionEvent = null) {
-    const trackedItem = tracked.find((item) => item.meta?.satelliteNumber === meta.satelliteNumber);
-    if (!trackedItem) {
-      return null;
-    }
-
+  async function getCachedTrajectoryPositions(meta, hours, conjunctionEvent = null) {
     const key = `${getTrajectoryCacheKey(meta, hours)}:${conjunctionEvent?.timeIso ?? 'none'}`;
     const cached = trajectoryPositionCache.get(key);
     const now = Date.now();
@@ -730,27 +728,84 @@
       return cached.positions;
     }
 
-    const start = new Date(now);
-    const horizonEnd = now + hours * 60 * 60 * 1000;
-    const eventEnd = conjunctionEvent?.timeIso ? new Date(conjunctionEvent.timeIso).getTime() : NaN;
-    const effectiveEnd =
-      Number.isFinite(eventEnd) && eventEnd > now ? eventEnd : horizonEnd;
-    const durationMs = Math.max(60 * 1000, effectiveEnd - now);
-    const preserveCollisionFidelity = Boolean(conjunctionEvent || meta.anomaly);
-    const sampleDivisorMs =
-      performanceMode && !preserveCollisionFidelity ? 20 * 60 * 1000 : 10 * 60 * 1000;
-    const minSteps = performanceMode && !preserveCollisionFidelity ? 12 : 24;
-    const maxSteps = performanceMode && !preserveCollisionFidelity ? 120 : 240;
-    const steps = Math.max(minSteps, Math.min(maxSteps, Math.ceil(durationMs / sampleDivisorMs)));
-    const positions = [];
+    if (pendingTrajectoryRequests.has(key)) {
+      return pendingTrajectoryRequests.get(key);
+    }
 
-    for (let step = 0; step <= steps; step += 1) {
-      const date = new Date(start.getTime() + (durationMs * step) / steps);
-      const geo = propagateToGeodetic(trackedItem.satrec, date);
-      if (!geo) {
+    const request = fetchModelTrajectoryPositions(meta, hours, conjunctionEvent, now)
+      .then((positions) => {
+        if (!positions?.length) {
+          return null;
+        }
+
+        trajectoryPositionCache.set(key, {
+          generatedAt: Date.now(),
+          positions
+        });
+        return positions;
+      })
+      .finally(() => {
+        pendingTrajectoryRequests.delete(key);
+      });
+
+    pendingTrajectoryRequests.set(key, request);
+    return request;
+  }
+
+  async function fetchModelTrajectoryPositions(meta, hours, conjunctionEvent, nowMs) {
+    const horizonEnd = nowMs + hours * 60 * 60 * 1000;
+    const eventEnd = conjunctionEvent?.timeIso ? new Date(conjunctionEvent.timeIso).getTime() : NaN;
+    const effectiveEnd = Number.isFinite(eventEnd) && eventEnd > nowMs ? eventEnd : horizonEnd;
+    const durationMinutes = Math.max(1, Math.ceil((effectiveEnd - nowMs) / (60 * 1000)));
+    const preserveCollisionFidelity = Boolean(conjunctionEvent || meta.anomaly);
+    const stepMinutes = performanceMode && !preserveCollisionFidelity ? 20 : 10;
+    const requestHours = Math.max(1, Math.ceil(durationMinutes / 60));
+
+    const response = await fetch('/api/tle-prediction', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: meta.name,
+        line1: meta.line1,
+        line2: meta.line2,
+        hours: requestHours,
+        stepMinutes
+      })
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload?.error ?? 'Prediction request failed.');
+    }
+
+    const relevantSamples = (payload.samples ?? []).filter((sample) => {
+      const sampleTime = new Date(sample.isoTime).getTime();
+      return Number.isFinite(sampleTime) && sampleTime >= nowMs && sampleTime <= effectiveEnd;
+    });
+
+    if (!relevantSamples.length) {
+      return null;
+    }
+
+    const positions = [];
+    for (const sample of relevantSamples) {
+      const sampleTime = new Date(sample.isoTime);
+      const temePosition = toEciVector(sample.positionKm);
+      if (!temePosition) {
         continue;
       }
-      positions.push(CesiumLib.Cartesian3.fromDegrees(geo.lon, geo.lat, geo.altKm * 1000));
+
+      const gmst = satellite.gstime(sampleTime);
+      const geodetic = satellite.eciToGeodetic(temePosition, gmst);
+      positions.push(
+        CesiumLib.Cartesian3.fromDegrees(
+          satellite.degreesLong(geodetic.longitude),
+          satellite.degreesLat(geodetic.latitude),
+          geodetic.height * 1000
+        )
+      );
     }
 
     if (!positions.length) {
@@ -765,12 +820,15 @@
       );
     }
 
-    trajectoryPositionCache.set(key, {
-      generatedAt: now,
-      positions
-    });
-
     return positions;
+  }
+
+  function toEciVector(positionKm) {
+    const [x, y, z] = positionKm ?? [];
+    if (![x, y, z].every((value) => Number.isFinite(value))) {
+      return null;
+    }
+    return { x, y, z };
   }
 
   function updateConjunctionSpots() {
