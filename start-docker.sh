@@ -21,6 +21,18 @@ ensure_env_files() {
   set +a
 }
 
+set_env_key() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  if grep -q "^${key}=" "$file"; then
+    sed -i.bak "s#^${key}=.*#${key}=${value}#" "$file"
+    rm -f "${file}.bak"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
 detect_local_ip() {
   local default_iface local_ip
   default_iface="$(route get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
@@ -54,14 +66,25 @@ case "${1:-}" in
     ensure_env_files
     check_port_conflict
     MODE="${2:-cpu}"
+    PERF_MODE="${3:-normal}"
     COMPOSE_FILES=(-f docker-compose.full.yml)
     if [ "$MODE" = "gpu" ]; then
       COMPOSE_FILES+=(-f docker-compose.gpu.yml)
       echo "GPU Docker mode enabled."
     elif [ "$MODE" != "cpu" ]; then
-      echo "Usage: $0 {up|down|reset} [cpu|gpu]"
+      echo "Usage: $0 {up|down|reset} [cpu|gpu] [normal|performance]"
       exit 1
     fi
+    if [ "$PERF_MODE" = "performance" ]; then
+      set_env_key .env.docker PUBLIC_DEMO_PERFORMANCE_MODE true
+      echo "Demo performance mode enabled."
+    elif [ "$PERF_MODE" = "normal" ]; then
+      set_env_key .env.docker PUBLIC_DEMO_PERFORMANCE_MODE false
+    else
+      echo "Usage: $0 {up|down|reset} [cpu|gpu] [normal|performance]"
+      exit 1
+    fi
+    ensure_env_files
     docker compose "${COMPOSE_FILES[@]}" up -d
     LOCAL_IP="$(detect_local_ip || true)"
     echo "Docker stack started."
@@ -91,12 +114,13 @@ case "${1:-}" in
     docker compose "${COMPOSE_FILES[@]}" down -v
     ;;
   *)
-    echo "Usage: $0 {up|down|reset} [cpu|gpu]"
+    echo "Usage: $0 {up|down|reset} [cpu|gpu] [normal|performance]"
     echo "  up    -> start app, Keycloak, and Postgres"
     echo "  down  -> stop containers"
     echo "  reset -> stop containers and remove volumes"
     echo "  cpu   -> default runtime"
     echo "  gpu   -> NVIDIA CUDA runtime"
+    echo "  normal/performance -> frontend render profile"
     exit 1
     ;;
 esac

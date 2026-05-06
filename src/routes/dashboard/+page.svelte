@@ -49,6 +49,7 @@
 
   let summaryRequestId = 0;
   const enrichedNameCache = new Map();
+  const PERFORMANCE_MODE = import.meta.env.PUBLIC_DEMO_PERFORMANCE_MODE === 'true';
 
   function normalizeSatelliteNumber(value) {
     const trimmed = String(value ?? '').trim();
@@ -152,7 +153,7 @@
       });
 
       viewer.scene.screenSpaceCameraController.enableInputs = false;
-      viewer.scene.globe.enableLighting = true;
+      viewer.scene.globe.enableLighting = !PERFORMANCE_MODE;
       viewer.scene.fog.enabled = false;
       viewer.scene.backgroundColor = CesiumLib.Color.fromCssColorString('#1e2326');
       viewer.cesiumWidget.creditContainer.style.display = 'none';

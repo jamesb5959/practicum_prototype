@@ -35,10 +35,11 @@
   let trajectoryRefreshTimer;
   const TRAJECTORY_CACHE_TTL_MS = 60 * 1000;
   const trajectoryPositionCache = new Map();
+  const PERFORMANCE_MODE = import.meta.env.PUBLIC_DEMO_PERFORMANCE_MODE === 'true';
 
   let allSatellites = [];
   let tracked = [];
-  let displayCount = 10;
+  let displayCount = PERFORMANCE_MODE ? 6 : 10;
   let renderedSatelliteCount = 0;
   let trajectoryHours = 12;
   let selectedSat = null;
@@ -145,8 +146,8 @@
       return;
     }
 
-    viewer.scene.globe.enableLighting = true;
-    viewer.scene.fog.enabled = true;
+    viewer.scene.globe.enableLighting = !PERFORMANCE_MODE;
+    viewer.scene.fog.enabled = !PERFORMANCE_MODE;
     viewer.scene.globe.show = true;
     viewer.scene.screenSpaceCameraController.minimumZoomDistance = 120000;
     viewer.scene.screenSpaceCameraController.maximumZoomDistance = 25000000;
@@ -719,7 +720,10 @@
     const effectiveEnd =
       Number.isFinite(eventEnd) && eventEnd > now ? eventEnd : horizonEnd;
     const durationMs = Math.max(60 * 1000, effectiveEnd - now);
-    const steps = Math.max(24, Math.min(240, Math.ceil(durationMs / (10 * 60 * 1000))));
+    const sampleDivisorMs = PERFORMANCE_MODE ? 20 * 60 * 1000 : 10 * 60 * 1000;
+    const minSteps = PERFORMANCE_MODE ? 12 : 24;
+    const maxSteps = PERFORMANCE_MODE ? 120 : 240;
+    const steps = Math.max(minSteps, Math.min(maxSteps, Math.ceil(durationMs / sampleDivisorMs)));
     const positions = [];
 
     for (let step = 0; step <= steps; step += 1) {
