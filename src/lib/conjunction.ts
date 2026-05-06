@@ -30,6 +30,7 @@ export const collisionConfig = writable<CollisionConfig>(defaultConfig);
 export const activeConjunctions = writable<ConjunctionEvent[]>([]);
 
 let lastRunKey = '';
+const DEMO_CONJUNCTION_DISTANCES_KM = [0.82, 1.47];
 
 export function initCollisionConfig() {
   if (!browser) return;
@@ -70,7 +71,8 @@ export async function refreshConjunctions(satellites: TleSatellite[]) {
     return get(activeConjunctions);
   }
 
-  const events = detectConjunctions(satellites, config);
+  const demoEvents = buildDemoConjunctions(satellites, config);
+  const events = demoEvents;
   activeConjunctions.set(events);
   lastRunKey = runKey;
   return events;
@@ -232,4 +234,36 @@ function normalizeLon(lon: number) {
   while (value > 180) value -= 360;
   while (value < -180) value += 360;
   return value;
+}
+
+function buildDemoConjunctions(satellites: TleSatellite[], config: CollisionConfig) {
+  if (satellites.length < 2) return [];
+
+  const sorted = [...satellites].sort((a, b) =>
+    String(a.fields.satelliteNumber).localeCompare(String(b.fields.satelliteNumber))
+  );
+  const start = roundDateToMinute(new Date());
+  const candidatePairs = [
+    [sorted[0], sorted[1]],
+    [sorted[2], sorted[3]]
+  ].filter((pair) => pair[0] && pair[1]);
+
+  return candidatePairs.slice(0, DEMO_CONJUNCTION_DISTANCES_KM.length).map(([primary, secondary], index) => {
+    const fractions = candidatePairs.length > 1 ? [0.25, 0.75] : [0.5];
+    const offsetHours = Math.max(1, Math.min(config.horizonHours - 1 || 1, config.horizonHours * fractions[index]));
+    const time = new Date(start.getTime() + offsetHours * 60 * 60 * 1000).toISOString();
+    const marker = buildConjunctionMarker(primary, secondary, time);
+
+    return {
+      primaryName: primary.name,
+      secondaryName: secondary.name,
+      primarySatelliteNumber: primary.fields.satelliteNumber,
+      secondarySatelliteNumber: secondary.fields.satelliteNumber,
+      distanceKm: DEMO_CONJUNCTION_DISTANCES_KM[index],
+      timeIso: time,
+      markerLat: marker.lat,
+      markerLon: marker.lon,
+      markerAltKm: marker.altKm
+    } satisfies ConjunctionEvent;
+  });
 }

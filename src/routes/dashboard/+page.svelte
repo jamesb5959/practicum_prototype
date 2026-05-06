@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { browser } from '$app/environment';
   import { fetchActiveAndDebrisTle, parseTle, propagateToGeodetic } from '$lib/tle';
   import {
@@ -30,6 +30,8 @@
   let detailsItem = null;
   let detailsRelatedConjunctions = [];
   let detailsTab = 'summary';
+  let activeDetailsKey = '';
+  let detailsPlacement = null;
 
   let detailsEnrichedFields = null;
   let detailsEnrichedLoading = false;
@@ -344,6 +346,8 @@
   function closeDetails() {
     detailsOpen = false;
     detailsItem = null;
+    activeDetailsKey = '';
+    detailsPlacement = null;
     detailsTab = 'summary';
     detailsEnrichedFields = null;
     detailsEnrichedError = '';
@@ -356,26 +360,30 @@
     detailsSecondaryEnrichedLoading = false;
   }
 
-  function handleCardKeydown(event, item) {
+  function getDetailsKey(item) {
+    if (!item) return '';
+    if (item.kind === 'satellite') {
+      return `sat:${normalizeSatelliteNumber(item.satelliteNumber)}`;
+    }
+    if (item.kind === 'conjunction') {
+      return `conj:${normalizeSatelliteNumber(item.primarySatelliteNumber)}:${normalizeSatelliteNumber(item.secondarySatelliteNumber)}:${item.timeIso}`;
+    }
+    return `${item.kind || 'item'}:${item.name || ''}:${item.issue || ''}`;
+  }
+
+  function handleCardKeydown(event, item, column, index) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      void openDetails(item);
+      void openDetails(item, column, index);
     }
   }
 
-  function isDetailsItem(item) {
-    if (!detailsOpen || !detailsItem || !item) return false;
-    if (item.kind === 'satellite') {
-      return (
-        detailsItem.kind === 'satellite' &&
-        normalizeSatelliteNumber(detailsItem.satelliteNumber) &&
-        normalizeSatelliteNumber(detailsItem.satelliteNumber) === normalizeSatelliteNumber(item.satelliteNumber)
-      );
-    }
-    return (
-      detailsItem.kind === item.kind &&
-      detailsItem.name === item.name &&
-      detailsItem.issue === item.issue
+  function isDetailsItem(column, index) {
+    return Boolean(
+      detailsOpen &&
+        detailsPlacement &&
+        detailsPlacement.column === column &&
+        detailsPlacement.index === index
     );
   }
 
@@ -388,14 +396,26 @@
     return Array.isArray(data?.fields) ? data.fields : [];
   }
 
-  async function openDetails(item) {
+  async function openDetails(item, column, index) {
     if (!browser) return;
-    if (isDetailsItem(item)) {
+    const nextKey = getDetailsKey(item);
+    if (
+      detailsOpen &&
+      activeDetailsKey === nextKey &&
+      detailsPlacement?.column === column &&
+      detailsPlacement?.index === index
+    ) {
       closeDetails();
       return;
     }
+    if (detailsOpen) {
+      closeDetails();
+      await tick();
+    }
     collisionMenuOpen = false;
     detailsItem = item;
+    activeDetailsKey = nextKey;
+    detailsPlacement = { column, index };
     detailsOpen = true;
     detailsTab = 'summary';
 
@@ -645,13 +665,13 @@
         <h3>Operational Systems</h3>
       </div>
       {#if operational.length}
-        {#each operational as sat}
+        {#each operational as sat, index}
           <button
-            class:selected-card={isDetailsItem(sat)}
+            class:selected-card={isDetailsItem('operational', index)}
             class="sat-card"
             aria-haspopup="dialog"
-            on:click={() => openDetails(sat)}
-            on:keydown={(event) => handleCardKeydown(event, sat)}
+            on:click={() => openDetails(sat, 'operational', index)}
+            on:keydown={(event) => handleCardKeydown(event, sat, 'operational', index)}
             type="button"
           >
             <span class="status-dot operational-dot"></span>
@@ -663,7 +683,7 @@
             </div>
             <span class="badge operational-badge">TRACKED</span>
           </button>
-          {#if detailsOpen && isDetailsItem(sat)}
+          {#if detailsOpen && isDetailsItem('operational', index)}
             <section class="details-panel details-inline glass fade-in" aria-label="Expanded satellite details">
               <div class="details-panel-header">
                 <div class="details-header-copy">
@@ -737,13 +757,13 @@
         <h3>Catalog Highlights</h3>
       </div>
       {#if attention.length}
-        {#each attention as sat}
+        {#each attention as sat, index}
           <button
-            class:selected-card={isDetailsItem(sat)}
+            class:selected-card={isDetailsItem('attention', index)}
             class="sat-card"
             aria-haspopup="dialog"
-            on:click={() => openDetails(sat)}
-            on:keydown={(event) => handleCardKeydown(event, sat)}
+            on:click={() => openDetails(sat, 'attention', index)}
+            on:keydown={(event) => handleCardKeydown(event, sat, 'attention', index)}
             type="button"
           >
             <span class="status-dot {sat.status}-dot"></span>
@@ -753,7 +773,7 @@
             </div>
             <span class="badge {sat.status}-badge">{sat.status.toUpperCase()}</span>
           </button>
-          {#if detailsOpen && isDetailsItem(sat)}
+          {#if detailsOpen && isDetailsItem('attention', index)}
             <section class="details-panel details-inline glass fade-in" aria-label="Expanded attention details">
               <div class="details-panel-header">
                 <div class="details-header-copy">
@@ -769,8 +789,8 @@
               {#if detailsItem.kind === 'conjunction'}
                 <div class="details-tabs">
                   <button class:active={detailsTab === 'summary'} on:click={() => (detailsTab = 'summary')}>Summary</button>
-                  <button class:active={detailsTab === 'primary'} on:click={() => (detailsTab = 'primary')}>Primary</button>
-                  <button class:active={detailsTab === 'secondary'} on:click={() => (detailsTab = 'secondary')}>Secondary</button>
+                  <button class:active={detailsTab === 'primary'} on:click={() => (detailsTab = 'primary')}>Satellite 1</button>
+                  <button class:active={detailsTab === 'secondary'} on:click={() => (detailsTab = 'secondary')}>Satellite 2</button>
                 </div>
 
                 {#if detailsTab === 'summary'}
@@ -783,7 +803,7 @@
                   </div>
                 {:else if detailsTab === 'primary'}
                   <div class="details-section">
-                    <span class="eyebrow">Primary Satellite</span>
+                    <span class="eyebrow">Satellite 1</span>
                     {#if detailsPrimaryEnrichedLoading}
                       <div class="label">Loading enriched fields...</div>
                     {:else if detailsPrimaryEnrichedError}
@@ -800,7 +820,7 @@
                   </div>
                 {:else}
                   <div class="details-section">
-                    <span class="eyebrow">Secondary Satellite</span>
+                    <span class="eyebrow">Satellite 2</span>
                     {#if detailsSecondaryEnrichedLoading}
                       <div class="label">Loading enriched fields...</div>
                     {:else if detailsSecondaryEnrichedError}

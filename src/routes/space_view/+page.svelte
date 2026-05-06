@@ -576,7 +576,7 @@
         const positions = getCachedTrajectoryPositions(
           meta,
           trajectoryHours,
-          getTrajectoryConjunctionEvent(meta)?.timeIso ?? null
+          getTrajectoryConjunctionEvent(meta) ?? null
         );
         if (!positions || requestId !== predictionRequestId) {
           continue;
@@ -658,7 +658,7 @@
       const positions = getCachedTrajectoryPositions(
         meta,
         trajectoryHours,
-        getTrajectoryConjunctionEvent(meta)?.timeIso ?? null
+        getTrajectoryConjunctionEvent(meta) ?? null
       );
       if (!positions) {
         continue;
@@ -699,13 +699,13 @@
         );
   }
 
-  function getCachedTrajectoryPositions(meta, hours, endTimeIso = null) {
+  function getCachedTrajectoryPositions(meta, hours, conjunctionEvent = null) {
     const trackedItem = tracked.find((item) => item.meta?.satelliteNumber === meta.satelliteNumber);
     if (!trackedItem) {
       return null;
     }
 
-    const key = `${getTrajectoryCacheKey(meta, hours)}:${endTimeIso ?? 'none'}`;
+    const key = `${getTrajectoryCacheKey(meta, hours)}:${conjunctionEvent?.timeIso ?? 'none'}`;
     const cached = trajectoryPositionCache.get(key);
     const now = Date.now();
 
@@ -715,9 +715,9 @@
 
     const start = new Date(now);
     const horizonEnd = now + hours * 60 * 60 * 1000;
-    const eventEnd = endTimeIso ? new Date(endTimeIso).getTime() : NaN;
+    const eventEnd = conjunctionEvent?.timeIso ? new Date(conjunctionEvent.timeIso).getTime() : NaN;
     const effectiveEnd =
-      Number.isFinite(eventEnd) && eventEnd > now ? Math.min(horizonEnd, eventEnd) : horizonEnd;
+      Number.isFinite(eventEnd) && eventEnd > now ? eventEnd : horizonEnd;
     const durationMs = Math.max(60 * 1000, effectiveEnd - now);
     const steps = Math.max(24, Math.min(240, Math.ceil(durationMs / (10 * 60 * 1000))));
     const positions = [];
@@ -733,6 +733,14 @@
 
     if (!positions.length) {
       return null;
+    }
+
+    if (conjunctionEvent) {
+      positions[positions.length - 1] = CesiumLib.Cartesian3.fromDegrees(
+        conjunctionEvent.markerLon,
+        conjunctionEvent.markerLat,
+        conjunctionEvent.markerAltKm * 1000
+      );
     }
 
     trajectoryPositionCache.set(key, {
