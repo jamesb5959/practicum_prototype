@@ -104,6 +104,51 @@ function Set-EnvKey {
   Set-Content -Path $Path -Value $next
 }
 
+function Sync-KeycloakClient {
+  $realm = if ($env:KEYCLOAK_REALM) { $env:KEYCLOAK_REALM } else { "demo" }
+  $clientId = if ($env:KEYCLOAK_CLIENT_ID) { $env:KEYCLOAK_CLIENT_ID } else { "svelte-web" }
+  $appBaseUrl = if ($env:APP_BASE_URL) { $env:APP_BASE_URL } else { "http://localhost:5174" }
+  $adminUser = if ($env:KEYCLOAK_ADMIN) { $env:KEYCLOAK_ADMIN } else { "admin" }
+  $adminPassword = if ($env:KEYCLOAK_ADMIN_PASSWORD) { $env:KEYCLOAK_ADMIN_PASSWORD } else { "Admin123!" }
+
+  $loggedIn = $false
+  for ($i = 0; $i -lt 30; $i++) {
+    docker exec practicum-keycloak /opt/keycloak/bin/kcadm.sh config credentials `
+      --server http://localhost:8080 `
+      --realm master `
+      --user $adminUser `
+      --password $adminPassword *> $null
+    if ($LASTEXITCODE -eq 0) {
+      $loggedIn = $true
+      break
+    }
+    Start-Sleep -Seconds 2
+  }
+
+  if (-not $loggedIn) {
+    Write-Warning "Could not log into Keycloak to sync client redirect settings."
+    return
+  }
+
+  $clientJson = docker exec practicum-keycloak /opt/keycloak/bin/kcadm.sh get clients `
+    -r $realm `
+    -q "clientId=$clientId" `
+    --fields id
+  $clients = $clientJson | ConvertFrom-Json
+  $clientUuid = @($clients)[0].id
+
+  if (-not $clientUuid) {
+    Write-Warning "Could not find Keycloak client '$clientId' in realm '$realm'."
+    return
+  }
+
+  docker exec practicum-keycloak /opt/keycloak/bin/kcadm.sh update "clients/$clientUuid" `
+    -r $realm `
+    -s "rootUrl=$appBaseUrl" `
+    -s "redirectUris=[`"$appBaseUrl/*`"]" `
+    -s "webOrigins=[`"$appBaseUrl`"]" *> $null
+}
+
 Ensure-EnvFiles
 
 if ($Mode -eq "gpu") {
@@ -126,12 +171,13 @@ switch ($Action) {
       Write-Host "GPU Docker mode enabled."
     }
     docker compose @composeFiles up -d
+    Sync-KeycloakClient
     $localIp = Get-LocalIp
     Write-Host "Docker stack started."
-    Write-Host "App: http://localhost:5173"
+    Write-Host "App: http://localhost:5174"
     Write-Host "Keycloak: http://localhost:8080"
     if ($localIp) {
-      Write-Host "LAN App: http://${localIp}:5173"
+      Write-Host "LAN App: http://${localIp}:5174"
       Write-Host "LAN Keycloak: http://${localIp}:8080"
     }
   }

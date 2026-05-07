@@ -51,7 +51,7 @@ docker compose up -d
 The imported client is already configured for your local Svelte app:
 
 - Client ID: `svelte-web`
-- Redirect URI: `http://localhost:5173/*`
+- Redirect URI: `http://localhost:5174/*`
 
 When you wire the frontend later, use standard OIDC Authorization Code flow with PKCE.
 

@@ -61,6 +61,46 @@ check_port_conflict() {
   fi
 }
 
+sync_keycloak_client() {
+  local realm="${KEYCLOAK_REALM:-demo}"
+  local client_id="${KEYCLOAK_CLIENT_ID:-svelte-web}"
+  local app_base_url="${APP_BASE_URL:-http://localhost:5174}"
+  local admin_user="${KEYCLOAK_ADMIN:-admin}"
+  local admin_password="${KEYCLOAK_ADMIN_PASSWORD:-Admin123!}"
+  local client_uuid=""
+
+  for _ in $(seq 1 30); do
+    if docker exec practicum-keycloak /opt/keycloak/bin/kcadm.sh config credentials \
+      --server http://localhost:8080 \
+      --realm master \
+      --user "$admin_user" \
+      --password "$admin_password" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 2
+  done
+
+  client_uuid="$(
+    docker exec practicum-keycloak /opt/keycloak/bin/kcadm.sh get clients \
+      -r "$realm" \
+      -q clientId="$client_id" \
+      --fields id 2>/dev/null |
+      sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' |
+      head -n 1
+  )"
+
+  if [ -z "$client_uuid" ]; then
+    echo "Warning: could not find Keycloak client '$client_id' in realm '$realm'."
+    return
+  fi
+
+  docker exec practicum-keycloak /opt/keycloak/bin/kcadm.sh update "clients/${client_uuid}" \
+    -r "$realm" \
+    -s "rootUrl=${app_base_url}" \
+    -s "redirectUris=[\"${app_base_url}/*\"]" \
+    -s "webOrigins=[\"${app_base_url}\"]" >/dev/null
+}
+
 case "${1:-}" in
   up)
     ensure_env_files
@@ -86,12 +126,13 @@ case "${1:-}" in
     fi
     ensure_env_files
     docker compose "${COMPOSE_FILES[@]}" up -d
+    sync_keycloak_client
     LOCAL_IP="$(detect_local_ip || true)"
     echo "Docker stack started."
-    echo "App: http://localhost:5173"
+    echo "App: http://localhost:5174"
     echo "Keycloak: http://localhost:8080"
     if [ -n "${LOCAL_IP:-}" ]; then
-      echo "LAN App: http://${LOCAL_IP}:5173"
+      echo "LAN App: http://${LOCAL_IP}:5174"
       echo "LAN Keycloak: http://${LOCAL_IP}:8080"
     fi
     ;;

@@ -150,8 +150,14 @@
         fullscreenButton: false,
         infoBox: false,
         selectionIndicator: false,
+        contextOptions: {
+          webgl: {
+            powerPreference: 'high-performance'
+          }
+        },
         shouldAnimate: true
       });
+      reportGpuDiagnostic('dashboard');
 
       viewer.scene.screenSpaceCameraController.enableInputs = false;
       viewer.scene.globe.enableLighting = !performanceMode;
@@ -164,6 +170,50 @@
       });
     } catch (err) {
       error = err instanceof Error ? `Cesium init failed: ${err.message}` : 'Cesium init failed.';
+    }
+  }
+
+  function getGpuDiagnostic() {
+    const gl = viewer?.scene?.context?._gl;
+    if (!gl) {
+      return {
+        highPerformance: false,
+        vendor: 'unknown',
+        renderer: 'unknown'
+      };
+    }
+
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    const vendor = debugInfo
+      ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL)
+      : gl.getParameter(gl.VENDOR);
+    const renderer = debugInfo
+      ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+      : gl.getParameter(gl.RENDERER);
+    const rendererText = `${vendor} ${renderer}`;
+    const highPerformance = /(nvidia|geforce|quadro|rtx|gtx|amd|radeon|rx |arc)/i.test(rendererText);
+
+    return {
+      highPerformance,
+      vendor,
+      renderer
+    };
+  }
+
+  async function reportGpuDiagnostic(source) {
+    try {
+      await fetch('/api/gpu-diagnostic', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          source,
+          ...getGpuDiagnostic()
+        })
+      });
+    } catch {
+      // Diagnostics should never block the dashboard.
     }
   }
 

@@ -9,7 +9,7 @@ const keycloakBaseUrl = env.KEYCLOAK_BASE_URL ?? 'http://localhost:8080';
 const keycloakInternalUrl = env.KEYCLOAK_INTERNAL_URL ?? keycloakBaseUrl;
 const realm = env.KEYCLOAK_REALM ?? 'demo';
 const clientId = env.KEYCLOAK_CLIENT_ID ?? 'svelte-web';
-const appBaseUrl = env.APP_BASE_URL ?? 'http://localhost:5173';
+const appBaseUrl = env.APP_BASE_URL ?? 'http://localhost:5174';
 const loginStateStore = new Map<string, { codeVerifier: string; returnTo: string; expiresAt: number }>();
 
 export type SessionUser = {

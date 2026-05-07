@@ -61,6 +61,7 @@
   let selectedTrajectorySatelliteNumber = null;
   let focusedConjunctionSatelliteNumbers = [];
   let focusedConjunctionEvent = null;
+  let selectedConjunctionSats = [];
   const LEO_MAX_KM = 2000;
   const MEO_MAX_KM = 35786;
   const MAX_PROTOTYPE_SATELLITES = 2000;
@@ -136,8 +137,14 @@
         fullscreenButton: false,
         infoBox: false,
         selectionIndicator: false,
+        contextOptions: {
+          webgl: {
+            powerPreference: 'high-performance'
+          }
+        },
         shouldAnimate: true
       });
+      reportGpuDiagnostic('space-view');
     } catch (err) {
       error =
         err instanceof Error
@@ -176,13 +183,10 @@
       if (!match) {
         return;
       }
-      selectedSat = match.meta;
-      selectedTrajectorySatelliteNumber = match.meta?.satelliteNumber ?? null;
-      focusedConjunctionSatelliteNumbers = [];
-      focusedConjunctionEvent = match.meta?.anomaly
+      const conjunction = match.meta?.anomaly
         ? findConjunctionForSatellite($activeConjunctions, match.meta?.satelliteNumber)
         : null;
-      infoTab = 'telemetry';
+      selectSatellite(match.meta, conjunction);
       void loadEnrichedForSelected();
     });
 
@@ -249,6 +253,50 @@
 
   function svgData(svg) {
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  }
+
+  function getGpuDiagnostic() {
+    const gl = viewer?.scene?.context?._gl;
+    if (!gl) {
+      return {
+        highPerformance: false,
+        vendor: 'unknown',
+        renderer: 'unknown'
+      };
+    }
+
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    const vendor = debugInfo
+      ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL)
+      : gl.getParameter(gl.VENDOR);
+    const renderer = debugInfo
+      ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+      : gl.getParameter(gl.RENDERER);
+    const rendererText = `${vendor} ${renderer}`;
+    const highPerformance = /(nvidia|geforce|quadro|rtx|gtx|amd|radeon|rx |arc)/i.test(rendererText);
+
+    return {
+      highPerformance,
+      vendor,
+      renderer
+    };
+  }
+
+  async function reportGpuDiagnostic(source) {
+    try {
+      await fetch('/api/gpu-diagnostic', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          source,
+          ...getGpuDiagnostic()
+        })
+      });
+    } catch {
+      // Diagnostics should never block the demo view.
+    }
   }
 
   onDestroy(() => {
@@ -502,11 +550,6 @@
 
   function activateConjunctionFocus(event) {
     if (!event) return;
-    focusedConjunctionSatelliteNumbers = [
-      event.primarySatelliteNumber,
-      event.secondarySatelliteNumber
-    ].filter(Boolean);
-    focusedConjunctionEvent = event;
     showTrajectoryLines = true;
     trajectoryScope = 'selected';
 
@@ -517,10 +560,42 @@
       return;
     }
 
-    selectedSat = primaryMatch.meta;
-    selectedTrajectorySatelliteNumber = primaryMatch.meta.satelliteNumber ?? null;
-    infoTab = 'risk';
+    selectSatellite(primaryMatch.meta, event, 'risk');
     void loadEnrichedForSelected();
+  }
+
+  function selectSatellite(meta, conjunction = null, tab = null) {
+    selectedSat = meta;
+    selectedTrajectorySatelliteNumber = meta?.satelliteNumber ?? null;
+    focusedConjunctionEvent = conjunction;
+    focusedConjunctionSatelliteNumbers = conjunction
+      ? [conjunction.primarySatelliteNumber, conjunction.secondarySatelliteNumber].filter(Boolean)
+      : [];
+    infoTab = tab ?? (conjunction ? 'risk' : 'telemetry');
+  }
+
+  function getConjunctionParticipants(event) {
+    if (!event) return [];
+    return [
+      {
+        role: 'Satellite 1',
+        satelliteNumber: event.primarySatelliteNumber,
+        fallbackName: event.primaryName
+      },
+      {
+        role: 'Satellite 2',
+        satelliteNumber: event.secondarySatelliteNumber,
+        fallbackName: event.secondaryName
+      }
+    ].map((participant) => {
+      const match = tracked.find(
+        (item) => item.meta?.satelliteNumber === participant.satelliteNumber
+      );
+      return {
+        ...participant,
+        meta: match?.meta ?? null
+      };
+    });
   }
 
   async function loadPredictionTrajectories() {
@@ -944,6 +1019,8 @@
     updateFocusedConjunctionMarker();
   }
 
+  $: selectedConjunctionSats = getConjunctionParticipants(focusedConjunctionEvent);
+
   $: if (viewer && CesiumLib) {
     selectedSat?.satelliteNumber;
     void loadEnrichedForSelected();
@@ -1163,6 +1240,69 @@
           <div><span class="label">Closest approach</span><strong>{selectedSat.collisionDistanceKm ? `${selectedSat.collisionDistanceKm} km` : 'None'}</strong></div>
           <div><span class="label">Expected time</span><strong>{selectedSat.collisionTimeIso ? new Date(selectedSat.collisionTimeIso).toLocaleString() : 'None'}</strong></div>
         </div>
+        {#if focusedConjunctionEvent && selectedConjunctionSats.length}
+          <div class="conjunction-details">
+            <div class="section-heading">Expected Conjunction</div>
+            <div class="info-grid">
+              <div>
+                <span class="label">Closest approach</span>
+                <strong>{focusedConjunctionEvent.distanceKm.toFixed(2)} km</strong>
+              </div>
+              <div>
+                <span class="label">Expected time</span>
+                <strong>{new Date(focusedConjunctionEvent.timeIso).toLocaleString()}</strong>
+              </div>
+              <div>
+                <span class="label">Impact latitude</span>
+                <strong>{focusedConjunctionEvent.markerLat.toFixed(3)}°</strong>
+              </div>
+              <div>
+                <span class="label">Impact longitude</span>
+                <strong>{focusedConjunctionEvent.markerLon.toFixed(3)}°</strong>
+              </div>
+            </div>
+            <div class="conjunction-participants">
+              {#each selectedConjunctionSats as participant}
+                <div class="participant-card">
+                  <div class="participant-heading">
+                    <span class="operator-badge selected-anomaly">{participant.role}</span>
+                    <strong>{participant.meta?.name ?? participant.fallbackName}</strong>
+                  </div>
+                  <div class="info-grid compact-grid">
+                    <div>
+                      <span class="label">Satellite #</span>
+                      <strong>{participant.satelliteNumber}</strong>
+                    </div>
+                    <div>
+                      <span class="label">Object</span>
+                      <strong>{participant.meta?.objectType ?? 'Unknown'}</strong>
+                    </div>
+                    <div>
+                      <span class="label">Designator</span>
+                      <strong>{participant.meta?.internationalDesignator || '—'}</strong>
+                    </div>
+                    <div>
+                      <span class="label">Orbit band</span>
+                      <strong>{participant.meta?.orbitBand ?? 'Unknown'}</strong>
+                    </div>
+                    <div>
+                      <span class="label">Latitude</span>
+                      <strong>{participant.meta?.lat ?? '—'}</strong>
+                    </div>
+                    <div>
+                      <span class="label">Longitude</span>
+                      <strong>{participant.meta?.lon ?? '—'}</strong>
+                    </div>
+                    <div>
+                      <span class="label">Altitude</span>
+                      <strong>{participant.meta?.altKm ? `${participant.meta.altKm} km` : '—'}</strong>
+                    </div>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       {/if}
 
       {#if infoTab === 'missions'}
@@ -1497,6 +1637,43 @@
     align-items: baseline;
     padding-bottom: 4px;
     border-bottom: 1px solid rgba(157, 169, 160, 0.08);
+  }
+
+  .conjunction-details {
+    display: grid;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(230, 126, 128, 0.18);
+  }
+
+  .conjunction-participants {
+    display: grid;
+    gap: 10px;
+  }
+
+  .participant-card {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid rgba(230, 126, 128, 0.16);
+    border-radius: 12px;
+    background: rgba(230, 126, 128, 0.07);
+  }
+
+  .participant-heading {
+    display: grid;
+    gap: 6px;
+  }
+
+  .participant-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .compact-grid {
+    gap: 4px;
   }
 
   .warn {
