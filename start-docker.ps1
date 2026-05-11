@@ -191,15 +191,31 @@ function Sync-KeycloakClient {
     return
   }
 
-  $redirectUris = 'redirectUris=[\"' + $appBaseUrl + '/*\"]'
-  $webOrigins = 'webOrigins=[\"' + $appBaseUrl + '\"]'
+  $clientPatchPath = Join-Path $RootDir ".keycloak-client-update.json"
+  $clientPatch = [ordered]@{
+    rootUrl = $appBaseUrl
+    redirectUris = @("$appBaseUrl/*")
+    webOrigins = @($appBaseUrl)
+  }
+  $clientPatch | ConvertTo-Json -Depth 4 | Set-Content -Path $clientPatchPath -Encoding UTF8
+
+  $copyResult = Invoke-NativeOutput "docker" @(
+    "cp", $clientPatchPath, "practicum-keycloak:/tmp/keycloak-client-update.json"
+  )
+  Remove-Item -Path $clientPatchPath -Force -ErrorAction SilentlyContinue
+  if ($copyResult.ExitCode -ne 0) {
+    Write-Warning "Could not copy Keycloak client update file into the container."
+    if ($copyResult.Output) {
+      Write-Warning ($copyResult.Output -join "`n")
+    }
+    return
+  }
+
   $updateResult = Invoke-NativeOutput "docker" @(
     "exec", "practicum-keycloak",
     "/opt/keycloak/bin/kcadm.sh", "update", "clients/$clientUuid",
     "-r", $realm,
-    "-s", "rootUrl=$appBaseUrl",
-    "-s", $redirectUris,
-    "-s", $webOrigins
+    "-f", "/tmp/keycloak-client-update.json"
   )
   if ($updateResult.ExitCode -ne 0) {
     Write-Warning "Could not update Keycloak redirect settings for '$clientId'."
@@ -223,6 +239,7 @@ if ($Mode -eq "gpu") {
 switch ($Action) {
   "up" {
     Check-PortConflict
+    Set-EnvKey -Path ".env.docker" -Key "APP_BASE_URL" -Value "http://localhost:5174"
     if ($Profile -eq "performance") {
       Set-EnvKey -Path ".env.docker" -Key "PUBLIC_DEMO_PERFORMANCE_MODE" -Value "true"
       Write-Host "Demo performance mode enabled."
