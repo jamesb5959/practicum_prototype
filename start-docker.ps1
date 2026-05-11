@@ -191,8 +191,8 @@ function Sync-KeycloakClient {
     return
   }
 
-  $redirectUris = "redirectUris=[`"$appBaseUrl/*`"]"
-  $webOrigins = "webOrigins=[`"$appBaseUrl`"]"
+  $redirectUris = 'redirectUris=[\"' + $appBaseUrl + '/*\"]'
+  $webOrigins = 'webOrigins=[\"' + $appBaseUrl + '\"]'
   $updateResult = Invoke-NativeOutput "docker" @(
     "exec", "practicum-keycloak",
     "/opt/keycloak/bin/kcadm.sh", "update", "clients/$clientUuid",
