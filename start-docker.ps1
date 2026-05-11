@@ -175,7 +175,7 @@ function Sync-KeycloakClient {
 
   $safeRealm = Escape-ShellSingleQuoted $realm
   $safeClientId = Escape-ShellSingleQuoted $clientId
-  $lookupCommand = "/opt/keycloak/bin/kcadm.sh get clients -r '$safeRealm' -q clientId='$safeClientId' --fields id 2>/dev/null | sed -n 's/.*`"id`" : `"\([^`"]*\)`".*/\1/p' | head -n 1"
+  $lookupCommand = "/opt/keycloak/bin/kcadm.sh get clients -r '$safeRealm' -q clientId='$safeClientId' --fields id 2>/dev/null | awk -F'`"' '/`"id`" :/ {print `$4; exit}'"
   $lookupResult = Invoke-NativeOutput "docker" @(
     "exec", "practicum-keycloak",
     "sh", "-lc", $lookupCommand
