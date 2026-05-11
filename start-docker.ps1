@@ -173,18 +173,20 @@ function Sync-KeycloakClient {
     return
   }
 
-  $safeRealm = Escape-ShellSingleQuoted $realm
-  $safeClientId = Escape-ShellSingleQuoted $clientId
-  $lookupCommand = "/opt/keycloak/bin/kcadm.sh get clients -r '$safeRealm' -q clientId='$safeClientId' --fields id 2>/dev/null | awk -F'`"' '/`"id`" :/ {print `$4; exit}'"
   $lookupResult = Invoke-NativeOutput "docker" @(
     "exec", "practicum-keycloak",
-    "sh", "-lc", $lookupCommand
+    "/opt/keycloak/bin/kcadm.sh", "get", "clients",
+    "-r", $realm,
+    "-q", "clientId=$clientId",
+    "--fields", "id"
   )
-  $clientUuid = (($lookupResult.Output | ForEach-Object { "$_" }) -join "").Trim()
+  $lookupOutput = ($lookupResult.Output | ForEach-Object { "$_" }) -join "`n"
+  $clientMatch = [regex]::Match($lookupOutput, '"id"\s*:\s*"([^"]+)"')
+  $clientUuid = if ($clientMatch.Success) { $clientMatch.Groups[1].Value } else { $null }
   if ($lookupResult.ExitCode -ne 0 -or -not $clientUuid) {
     Write-Warning "Could not find Keycloak client '$clientId' in realm '$realm'."
-    if ($lookupResult.Output) {
-      Write-Warning ($lookupResult.Output -join "`n")
+    if ($lookupOutput) {
+      Write-Warning $lookupOutput
     }
     return
   }
