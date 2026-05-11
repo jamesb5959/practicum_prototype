@@ -185,12 +185,15 @@ function Sync-KeycloakClient {
     return
   }
 
-  $clientJson = $clientResult.Output
-  $clients = $clientJson | ConvertFrom-Json
-  $clientUuid = @($clients)[0].id
+  $clientJson = ($clientResult.Output | ForEach-Object { "$_" }) -join "`n"
+  $clientMatch = [regex]::Match($clientJson, '"id"\s*:\s*"([^"]+)"')
+  $clientUuid = if ($clientMatch.Success) { $clientMatch.Groups[1].Value } else { $null }
 
   if (-not $clientUuid) {
     Write-Warning "Could not find Keycloak client '$clientId' in realm '$realm'."
+    if ($clientJson) {
+      Write-Warning "Keycloak client lookup output: $clientJson"
+    }
     return
   }
 
