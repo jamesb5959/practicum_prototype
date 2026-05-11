@@ -197,7 +197,9 @@ function Sync-KeycloakClient {
     redirectUris = @("$appBaseUrl/*")
     webOrigins = @($appBaseUrl)
   }
-  $clientPatch | ConvertTo-Json -Depth 4 | Set-Content -Path $clientPatchPath -Encoding UTF8
+  $clientPatchJson = $clientPatch | ConvertTo-Json -Depth 4
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($clientPatchPath, $clientPatchJson, $utf8NoBom)
 
   $copyResult = Invoke-NativeOutput "docker" @(
     "cp", $clientPatchPath, "practicum-keycloak:/tmp/keycloak-client-update.json"
