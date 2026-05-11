@@ -104,6 +104,41 @@ function Set-EnvKey {
   Set-Content -Path $Path -Value $next
 }
 
+function Invoke-NativeQuiet {
+  param(
+    [string]$Command,
+    [string[]]$Arguments
+  )
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $Command @Arguments 1>$null 2>$null
+    return $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+}
+
+function Invoke-NativeOutput {
+  param(
+    [string]$Command,
+    [string[]]$Arguments
+  )
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = & $Command @Arguments 2>$null
+    return @{
+      ExitCode = $LASTEXITCODE
+      Output = $output
+    }
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+}
+
 function Sync-KeycloakClient {
   $realm = if ($env:KEYCLOAK_REALM) { $env:KEYCLOAK_REALM } else { "demo" }
   $clientId = if ($env:KEYCLOAK_CLIENT_ID) { $env:KEYCLOAK_CLIENT_ID } else { "svelte-web" }
@@ -113,12 +148,15 @@ function Sync-KeycloakClient {
 
   $loggedIn = $false
   for ($i = 0; $i -lt 30; $i++) {
-    docker exec practicum-keycloak /opt/keycloak/bin/kcadm.sh config credentials `
-      --server http://localhost:8080 `
-      --realm master `
-      --user $adminUser `
-      --password $adminPassword *> $null
-    if ($LASTEXITCODE -eq 0) {
+    $loginExitCode = Invoke-NativeQuiet "docker" @(
+      "exec", "practicum-keycloak",
+      "/opt/keycloak/bin/kcadm.sh", "config", "credentials",
+      "--server", "http://localhost:8080",
+      "--realm", "master",
+      "--user", $adminUser,
+      "--password", $adminPassword
+    )
+    if ($loginExitCode -eq 0) {
       $loggedIn = $true
       break
     }
@@ -130,10 +168,19 @@ function Sync-KeycloakClient {
     return
   }
 
-  $clientJson = docker exec practicum-keycloak /opt/keycloak/bin/kcadm.sh get clients `
-    -r $realm `
-    -q "clientId=$clientId" `
-    --fields id
+  $clientResult = Invoke-NativeOutput "docker" @(
+    "exec", "practicum-keycloak",
+    "/opt/keycloak/bin/kcadm.sh", "get", "clients",
+    "-r", $realm,
+    "-q", "clientId=$clientId",
+    "--fields", "id"
+  )
+  if ($clientResult.ExitCode -ne 0) {
+    Write-Warning "Could not read Keycloak client '$clientId' in realm '$realm'."
+    return
+  }
+
+  $clientJson = $clientResult.Output
   $clients = $clientJson | ConvertFrom-Json
   $clientUuid = @($clients)[0].id
 
@@ -142,11 +189,17 @@ function Sync-KeycloakClient {
     return
   }
 
-  docker exec practicum-keycloak /opt/keycloak/bin/kcadm.sh update "clients/$clientUuid" `
-    -r $realm `
-    -s "rootUrl=$appBaseUrl" `
-    -s "redirectUris=[`"$appBaseUrl/*`"]" `
-    -s "webOrigins=[`"$appBaseUrl`"]" *> $null
+  $updateExitCode = Invoke-NativeQuiet "docker" @(
+    "exec", "practicum-keycloak",
+    "/opt/keycloak/bin/kcadm.sh", "update", "clients/$clientUuid",
+    "-r", $realm,
+    "-s", "rootUrl=$appBaseUrl",
+    "-s", "redirectUris=[`"$appBaseUrl/*`"]",
+    "-s", "webOrigins=[`"$appBaseUrl`"]"
+  )
+  if ($updateExitCode -ne 0) {
+    Write-Warning "Could not update Keycloak redirect settings for '$clientId'."
+  }
 }
 
 Ensure-EnvFiles
