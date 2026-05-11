@@ -173,34 +173,32 @@ function Sync-KeycloakClient {
     return
   }
 
-  $clientResult = Invoke-NativeOutput "docker" @(
-    "exec", "practicum-keycloak",
-    "/opt/keycloak/bin/kcadm.sh", "get", "clients",
-    "-r", $realm,
-    "-q", "clientId=$clientId",
-    "--fields", "id"
-  )
-  if ($clientResult.ExitCode -ne 0) {
-    Write-Warning "Could not read Keycloak client '$clientId' in realm '$realm'."
-    return
-  }
-
-  $clientJson = ($clientResult.Output | ForEach-Object { "$_" }) -join "`n"
-  $clientMatch = [regex]::Match($clientJson, '"id"\s*:\s*"([^"]+)"')
-  $clientUuid = if ($clientMatch.Success) { $clientMatch.Groups[1].Value } else { $null }
-
-  if (-not $clientUuid) {
-    Write-Warning "Could not find Keycloak client '$clientId' in realm '$realm'."
-    if ($clientJson) {
-      Write-Warning "Keycloak client lookup output: $clientJson"
-    }
-    return
-  }
-
   $safeRealm = Escape-ShellSingleQuoted $realm
-  $safeClientUuid = Escape-ShellSingleQuoted $clientUuid
+  $safeClientId = Escape-ShellSingleQuoted $clientId
   $safeAppBaseUrl = Escape-ShellSingleQuoted $appBaseUrl
-  $updateCommand = "/opt/keycloak/bin/kcadm.sh update 'clients/$safeClientUuid' -r '$safeRealm' -s 'rootUrl=$safeAppBaseUrl' -s 'redirectUris=[`"$safeAppBaseUrl/*`"]' -s 'webOrigins=[`"$safeAppBaseUrl`"]'"
+  $updateCommand = @"
+realm='$safeRealm'
+client_id='$safeClientId'
+app_base_url='$safeAppBaseUrl'
+
+client_uuid=`$(/opt/keycloak/bin/kcadm.sh get clients \
+  -r "`$realm" \
+  -q clientId="`$client_id" \
+  --fields id 2>/dev/null |
+  sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' |
+  head -n 1)
+
+if [ -z "`$client_uuid" ]; then
+  echo "Could not find Keycloak client '`$client_id' in realm '`$realm'."
+  exit 2
+fi
+
+/opt/keycloak/bin/kcadm.sh update "clients/`$client_uuid" \
+  -r "`$realm" \
+  -s "rootUrl=`$app_base_url" \
+  -s "redirectUris=[\"`$app_base_url/*\"]" \
+  -s "webOrigins=[\"`$app_base_url\"]"
+"@
 
   $updateResult = Invoke-NativeOutput "docker" @(
     "exec", "practicum-keycloak",
