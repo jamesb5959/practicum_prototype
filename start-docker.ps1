@@ -129,7 +129,7 @@ function Invoke-NativeOutput {
   $previousErrorActionPreference = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
   try {
-    $output = & $Command @Arguments 2>$null
+    $output = & $Command @Arguments 2>&1
     return @{
       ExitCode = $LASTEXITCODE
       Output = $output
@@ -137,6 +137,11 @@ function Invoke-NativeOutput {
   } finally {
     $ErrorActionPreference = $previousErrorActionPreference
   }
+}
+
+function Escape-ShellSingleQuoted {
+  param([string]$Value)
+  return $Value.Replace("'", "'\''")
 }
 
 function Sync-KeycloakClient {
@@ -189,17 +194,24 @@ function Sync-KeycloakClient {
     return
   }
 
-  $updateExitCode = Invoke-NativeQuiet "docker" @(
+  $safeRealm = Escape-ShellSingleQuoted $realm
+  $safeClientUuid = Escape-ShellSingleQuoted $clientUuid
+  $safeAppBaseUrl = Escape-ShellSingleQuoted $appBaseUrl
+  $updateCommand = "/opt/keycloak/bin/kcadm.sh update 'clients/$safeClientUuid' -r '$safeRealm' -s 'rootUrl=$safeAppBaseUrl' -s 'redirectUris=[`"$safeAppBaseUrl/*`"]' -s 'webOrigins=[`"$safeAppBaseUrl`"]'"
+
+  $updateResult = Invoke-NativeOutput "docker" @(
     "exec", "practicum-keycloak",
-    "/opt/keycloak/bin/kcadm.sh", "update", "clients/$clientUuid",
-    "-r", $realm,
-    "-s", "rootUrl=$appBaseUrl",
-    "-s", "redirectUris=[`"$appBaseUrl/*`"]",
-    "-s", "webOrigins=[`"$appBaseUrl`"]"
+    "sh", "-lc", $updateCommand
   )
-  if ($updateExitCode -ne 0) {
+  if ($updateResult.ExitCode -ne 0) {
     Write-Warning "Could not update Keycloak redirect settings for '$clientId'."
+    if ($updateResult.Output) {
+      Write-Warning ($updateResult.Output -join "`n")
+    }
+    return
   }
+
+  Write-Host "Keycloak client '$clientId' redirect settings synced to $appBaseUrl."
 }
 
 Ensure-EnvFiles
