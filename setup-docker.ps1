@@ -16,11 +16,14 @@ $WarpcoreDataset = "static/data/88_most_recent_satellites_LEO.csv"
 $PredictionDataset = "TLE_Prediction/data/88_most_recent_satellites_LEO.csv"
 $ModelPath = "TLE_Prediction/models/mldsgp4_best_model.pth"
 $TexturePath = "static/textures/earth.jpg"
+$SkyboxDir = "static/skybox"
+$SkyboxFiles = @("px.jpg", "nx.jpg", "py.jpg", "ny.jpg", "pz.jpg", "nz.jpg")
 
 Write-Host "Ensuring project directories exist..."
 New-Item -ItemType Directory -Force -Path "TLE_Prediction/cache" | Out-Null
 New-Item -ItemType Directory -Force -Path "TLE_Prediction/data" | Out-Null
 New-Item -ItemType Directory -Force -Path "keycloak-server" | Out-Null
+New-Item -ItemType Directory -Force -Path $SkyboxDir | Out-Null
 
 Write-Host "Checking required live dataset..."
 if (-not (Test-Path $WarpcoreDataset)) {
@@ -43,6 +46,14 @@ if (-not (Test-Path $TexturePath)) {
   Write-Error "Missing globe texture: $TexturePath`nAdd the texture file before running the Docker stack."
 }
 
+Write-Host "Checking skybox images..."
+foreach ($file in $SkyboxFiles) {
+  $path = Join-Path $SkyboxDir $file
+  if (-not (Test-Path $path)) {
+    Write-Error "Missing skybox face: $path`nPlace 6 faces named px.jpg nx.jpg py.jpg ny.jpg pz.jpg nz.jpg in $SkyboxDir before building."
+  }
+}
+
 if (-not (Test-Path ".env.docker")) {
   Write-Host "Creating .env.docker from .env.docker.example..."
   Copy-Item ".env.docker.example" ".env.docker"
@@ -50,8 +61,8 @@ if (-not (Test-Path ".env.docker")) {
 
 $dockerEnvText = Get-Content ".env.docker" -Raw
 if ($dockerEnvText -notmatch "(?m)^KEYCLOAK_DIRECT_LOGIN=") {
-  Write-Host "Adding KEYCLOAK_DIRECT_LOGIN=true to .env.docker..."
-  Add-Content ".env.docker" "`nKEYCLOAK_DIRECT_LOGIN=true"
+  Write-Host "Adding KEYCLOAK_DIRECT_LOGIN=false to .env.docker..."
+  Add-Content ".env.docker" "`nKEYCLOAK_DIRECT_LOGIN=false"
 }
 
 if (-not (Test-Path "keycloak-server/.env")) {

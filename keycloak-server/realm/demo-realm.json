@@ -1,8 +1,8 @@
 {
   "realm": "demo",
-  "displayName": "LEO Prototype",
+  "displayName": "Real-Time Conjunction Analyzer",
   "enabled": true,
-  "registrationAllowed": true,
+  "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
@@ -28,12 +28,12 @@
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://localhost:5173/*"
+        "http://localhost:5174/*"
       ],
       "webOrigins": [
-        "http://localhost:5173"
+        "http://localhost:5174"
       ],
-      "rootUrl": "http://localhost:5173",
+      "rootUrl": "http://localhost:5174",
       "baseUrl": "/"
     }
   ],

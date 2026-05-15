@@ -1,6 +1,7 @@
 import * as satellite from 'satellite.js';
 
 export const LOCAL_WARPCORE_CSV_URL = '/data/88_most_recent_satellites_LEO.csv';
+export const ENRICHED_TLE_API_URL = '/api/tle';
 
 export type TleSatellite = {
   name: string;
@@ -41,8 +42,20 @@ async function fetchWarpcoreCsvAsTle(): Promise<string> {
 }
 
 export async function fetchActiveTle(): Promise<{ text: string; source: string }> {
-  const text = await fetchWarpcoreCsvAsTle();
-  return { text, source: 'Warpcore (Data)' };
+  const response = await fetch(ENRICHED_TLE_API_URL, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch enriched TLE data: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (typeof payload?.activeText !== 'string') {
+    throw new Error('Enriched TLE payload is missing activeText.');
+  }
+
+  return {
+    text: payload.activeText,
+    source: payload.source || 'Enriched Missions CSV'
+  };
 }
 
 export async function fetchActiveAndDebrisTle(): Promise<{
@@ -50,10 +63,16 @@ export async function fetchActiveAndDebrisTle(): Promise<{
   debrisText: string;
   source: string;
 }> {
+  const response = await fetch(ENRICHED_TLE_API_URL, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch enriched TLE data: ${response.status}`);
+  }
+
+  const payload = await response.json();
   return {
-    activeText: await fetchWarpcoreCsvAsTle(),
-    debrisText: '',
-    source: 'Warpcore (Data)'
+    activeText: typeof payload?.activeText === 'string' ? payload.activeText : '',
+    debrisText: typeof payload?.debrisText === 'string' ? payload.debrisText : '',
+    source: payload?.source || 'Enriched Missions CSV'
   };
 }
 
