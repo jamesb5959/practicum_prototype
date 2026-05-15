@@ -14,7 +14,7 @@ if (-not (Test-Path "package.json")) {
 
 $WarpcoreDataset = "static/data/88_most_recent_satellites_LEO.csv"
 $PredictionDataset = "TLE_Prediction/data/88_most_recent_satellites_LEO.csv"
-$ModelPath = "TLE_Prediction/models/mldsgp4_best_model.pth"
+$ModelPath = "TLE_Prediction/models/mldsgp4_best_model_improved.pth"
 $TexturePath = "static/textures/earth.jpg"
 $SkyboxDir = "static/skybox"
 $SkyboxFiles = @("px.jpg", "nx.jpg", "py.jpg", "ny.jpg", "pz.jpg", "nz.jpg")

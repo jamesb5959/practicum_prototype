@@ -13,6 +13,7 @@ export type PredictionRequest = {
   line1: string;
   line2: string;
   hours: number;
+  stepMinutes?: number;
 };
 
 export type PredictionSample = {
@@ -33,11 +34,13 @@ export type PredictionResult = {
 
 export async function runTlePrediction(request: PredictionRequest): Promise<PredictionResult> {
   const hours = clampHours(request.hours);
+  const stepMinutes = clampStepMinutes(request.stepMinutes ?? 60);
   const cacheKey = JSON.stringify({
     name: request.name,
     line1: request.line1,
     line2: request.line2,
-    hours
+    hours,
+    stepMinutes
   });
 
   const cached = predictionCache.get(cacheKey);
@@ -48,7 +51,7 @@ export async function runTlePrediction(request: PredictionRequest): Promise<Pred
   const python = env.TLE_PREDICTION_PYTHON ?? 'python3';
   const modelPath =
     env.TLE_PREDICTION_MODEL_PATH ??
-    resolve(process.cwd(), 'TLE_Prediction', 'models', 'mldsgp4_best_model.pth');
+    resolve(process.cwd(), 'TLE_Prediction', 'models', 'mldsgp4_best_model_improved.pth');
   const scriptPath = resolve(process.cwd(), 'TLE_Prediction', 'predict_trajectory.py');
   const cacheDir = resolve(process.cwd(), 'TLE_Prediction', 'cache');
 
@@ -67,6 +70,8 @@ export async function runTlePrediction(request: PredictionRequest): Promise<Pred
         request.line2,
         '--hours',
         String(hours),
+        '--step-minutes',
+        String(stepMinutes),
         '--model-path',
         modelPath
       ],
@@ -118,6 +123,11 @@ export function warmPredictionModel() {
 function clampHours(hours: number) {
   const rounded = Math.floor(hours);
   return Math.max(1, Math.min(240, rounded));
+}
+
+function clampStepMinutes(stepMinutes: number) {
+  const rounded = Math.floor(stepMinutes);
+  return Math.max(1, Math.min(120, rounded));
 }
 
 function extractJsonLine(text: string) {

@@ -20,6 +20,7 @@ export const POST: RequestHandler = async ({ request }) => {
       line1?: string;
       line2?: string;
       hours?: number;
+      stepMinutes?: number;
     };
 
     if (!body.name || !body.line1 || !body.line2) {
@@ -30,7 +31,8 @@ export const POST: RequestHandler = async ({ request }) => {
       name: body.name,
       line1: body.line1,
       line2: body.line2,
-      hours: body.hours ?? 24
+      hours: body.hours ?? 24,
+      stepMinutes: body.stepMinutes
     });
 
     return json(result);

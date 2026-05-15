@@ -11,7 +11,7 @@ fi
 
 WARPCORE_DATASET="static/data/88_most_recent_satellites_LEO.csv"
 PREDICTION_DATASET="TLE_Prediction/data/88_most_recent_satellites_LEO.csv"
-MODEL_PATH="TLE_Prediction/models/mldsgp4_best_model.pth"
+MODEL_PATH="TLE_Prediction/models/mldsgp4_best_model_improved.pth"
 TEXTURE_PATH="static/textures/earth.jpg"
 SKYBOX_DIR="static/skybox"
 SKYBOX_FILES=(px.jpg nx.jpg py.jpg ny.jpg pz.jpg nz.jpg)
