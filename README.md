@@ -35,7 +35,7 @@ Login is handled by the local Keycloak server in `keycloak-server/`.
 Default local demo values:
 
 - Keycloak base URL: `http://localhost:8080`
-- App base URL: `http://localhost:5173`
+- App base URL: `http://localhost:5174`
 - Realm: `demo`
 - Client ID: `svelte-web`
 
@@ -56,7 +56,7 @@ cp .env.example .env
 
 Common values:
 
-- `APP_BASE_URL=http://localhost:5173`
+- `APP_BASE_URL=http://localhost:5174`
 - `KEYCLOAK_BASE_URL=http://localhost:8080`
 - `KEYCLOAK_INTERNAL_URL=http://localhost:8080`
 - `KEYCLOAK_REALM=demo`
@@ -113,7 +113,7 @@ npm run dev
 
 App URL:
 
-- [http://localhost:5173](http://localhost:5173)
+- [http://localhost:5174](http://localhost:5174)
 
 Keycloak admin:
 
@@ -209,7 +209,7 @@ This starts:
 
 URLs:
 
-- App: [http://localhost:5173](http://localhost:5173)
+- App: [http://localhost:5174](http://localhost:5174)
 - Keycloak: [http://localhost:8080](http://localhost:8080)
 - Keycloak admin: [http://localhost:8080/admin](http://localhost:8080/admin)
 

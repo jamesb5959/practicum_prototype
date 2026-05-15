@@ -10,7 +10,7 @@ services:
     environment:
       NODE_ENV: production
     ports:
-      - "5173:4173"
+      - "5174:4173"
     depends_on:
       keycloak:
         condition: service_started

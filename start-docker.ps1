@@ -104,6 +104,132 @@ function Set-EnvKey {
   Set-Content -Path $Path -Value $next
 }
 
+function Invoke-NativeQuiet {
+  param(
+    [string]$Command,
+    [string[]]$Arguments
+  )
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    & $Command @Arguments 1>$null 2>$null
+    return $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+}
+
+function Invoke-NativeOutput {
+  param(
+    [string]$Command,
+    [string[]]$Arguments
+  )
+
+  $previousErrorActionPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $output = & $Command @Arguments 2>&1
+    return @{
+      ExitCode = $LASTEXITCODE
+      Output = $output
+    }
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+}
+
+function Escape-ShellSingleQuoted {
+  param([string]$Value)
+  return $Value.Replace("'", "'\''")
+}
+
+function Sync-KeycloakClient {
+  $realm = if ($env:KEYCLOAK_REALM) { $env:KEYCLOAK_REALM } else { "demo" }
+  $clientId = if ($env:KEYCLOAK_CLIENT_ID) { $env:KEYCLOAK_CLIENT_ID } else { "svelte-web" }
+  $appBaseUrl = if ($env:APP_BASE_URL) { $env:APP_BASE_URL } else { "http://localhost:5174" }
+  $adminUser = if ($env:KEYCLOAK_ADMIN) { $env:KEYCLOAK_ADMIN } else { "admin" }
+  $adminPassword = if ($env:KEYCLOAK_ADMIN_PASSWORD) { $env:KEYCLOAK_ADMIN_PASSWORD } else { "Admin123!" }
+
+  $loggedIn = $false
+  for ($i = 0; $i -lt 30; $i++) {
+    $loginExitCode = Invoke-NativeQuiet "docker" @(
+      "exec", "practicum-keycloak",
+      "/opt/keycloak/bin/kcadm.sh", "config", "credentials",
+      "--server", "http://localhost:8080",
+      "--realm", "master",
+      "--user", $adminUser,
+      "--password", $adminPassword
+    )
+    if ($loginExitCode -eq 0) {
+      $loggedIn = $true
+      break
+    }
+    Start-Sleep -Seconds 2
+  }
+
+  if (-not $loggedIn) {
+    Write-Warning "Could not log into Keycloak to sync client redirect settings."
+    return
+  }
+
+  $lookupResult = Invoke-NativeOutput "docker" @(
+    "exec", "practicum-keycloak",
+    "/opt/keycloak/bin/kcadm.sh", "get", "clients",
+    "-r", $realm,
+    "-q", "clientId=$clientId",
+    "--fields", "id"
+  )
+  $lookupOutput = ($lookupResult.Output | ForEach-Object { "$_" }) -join "`n"
+  $clientMatch = [regex]::Match($lookupOutput, '"id"\s*:\s*"([^"]+)"')
+  $clientUuid = if ($clientMatch.Success) { $clientMatch.Groups[1].Value } else { $null }
+  if ($lookupResult.ExitCode -ne 0 -or -not $clientUuid) {
+    Write-Warning "Could not find Keycloak client '$clientId' in realm '$realm'."
+    if ($lookupOutput) {
+      Write-Warning $lookupOutput
+    }
+    return
+  }
+
+  $clientPatchPath = Join-Path $RootDir ".keycloak-client-update.json"
+  $clientPatch = [ordered]@{
+    rootUrl = $appBaseUrl
+    redirectUris = @("$appBaseUrl/*")
+    webOrigins = @($appBaseUrl)
+  }
+  $clientPatchJson = $clientPatch | ConvertTo-Json -Depth 4
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($clientPatchPath, $clientPatchJson, $utf8NoBom)
+
+  $copyResult = Invoke-NativeOutput "docker" @(
+    "cp", $clientPatchPath, "practicum-keycloak:/tmp/keycloak-client-update.json"
+  )
+  Remove-Item -Path $clientPatchPath -Force -ErrorAction SilentlyContinue
+  if ($copyResult.ExitCode -ne 0) {
+    Write-Warning "Could not copy Keycloak client update file into the container."
+    if ($copyResult.Output) {
+      Write-Warning ($copyResult.Output -join "`n")
+    }
+    return
+  }
+
+  $updateResult = Invoke-NativeOutput "docker" @(
+    "exec", "practicum-keycloak",
+    "/opt/keycloak/bin/kcadm.sh", "update", "clients/$clientUuid",
+    "-r", $realm,
+    "-f", "/tmp/keycloak-client-update.json"
+  )
+  if ($updateResult.ExitCode -ne 0) {
+    Write-Warning "Could not update Keycloak redirect settings for '$clientId'."
+    if ($updateResult.Output) {
+      Write-Warning ($updateResult.Output -join "`n")
+    }
+    return
+  }
+
+  Write-Host "Keycloak client '$clientId' redirect settings synced to $appBaseUrl."
+}
+
 Ensure-EnvFiles
 
 if ($Mode -eq "gpu") {
@@ -115,6 +241,7 @@ if ($Mode -eq "gpu") {
 switch ($Action) {
   "up" {
     Check-PortConflict
+    Set-EnvKey -Path ".env.docker" -Key "APP_BASE_URL" -Value "http://localhost:5174"
     if ($Profile -eq "performance") {
       Set-EnvKey -Path ".env.docker" -Key "PUBLIC_DEMO_PERFORMANCE_MODE" -Value "true"
       Write-Host "Demo performance mode enabled."
@@ -126,12 +253,13 @@ switch ($Action) {
       Write-Host "GPU Docker mode enabled."
     }
     docker compose @composeFiles up -d
+    Sync-KeycloakClient
     $localIp = Get-LocalIp
     Write-Host "Docker stack started."
-    Write-Host "App: http://localhost:5173"
+    Write-Host "App: http://localhost:5174"
     Write-Host "Keycloak: http://localhost:8080"
     if ($localIp) {
-      Write-Host "LAN App: http://${localIp}:5173"
+      Write-Host "LAN App: http://${localIp}:5174"
       Write-Host "LAN Keycloak: http://${localIp}:8080"
     }
   }
